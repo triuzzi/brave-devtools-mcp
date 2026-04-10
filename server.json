@@ -1,10 +1,10 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.nichochar/brave-devtools-mcp",
-  "title": "Brave DevTools MCP",
-  "description": "MCP server for Brave DevTools",
+  "name": "io.github.triuzzi/brave-mcp",
+  "title": "Brave MCP",
+  "description": "MCP server for Brave Browser DevTools",
   "repository": {
-    "url": "https://github.com/nichochar/brave-devtools-mcp",
+    "url": "https://github.com/triuzzi/brave-devtools-mcp",
     "source": "github"
   },
   "version": "0.1.0",
@@ -12,7 +12,7 @@
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
-      "identifier": "brave-devtools-mcp",
+      "identifier": "brave-mcp",
       "version": "0.1.0",
       "transport": {
         "type": "stdio"

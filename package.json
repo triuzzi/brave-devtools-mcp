@@ -1,9 +1,10 @@
 {
-  "name": "brave-devtools-mcp",
+  "name": "brave-mcp",
   "version": "0.1.0",
   "description": "MCP server for Brave DevTools",
   "type": "module",
   "bin": {
+    "brave-mcp": "./build/src/bin/brave-devtools-mcp.js",
     "brave-devtools-mcp": "./build/src/bin/brave-devtools-mcp.js",
     "brave-devtools": "./build/src/bin/brave-devtools.js"
   },

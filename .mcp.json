@@ -2,7 +2,7 @@
   "mcpServers": {
     "brave-devtools": {
       "command": "npx",
-      "args": ["brave-devtools-mcp@latest"]
+      "args": ["brave-mcp@latest"]
     }
   }
 }

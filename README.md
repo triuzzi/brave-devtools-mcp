@@ -1,8 +1,10 @@
-# Brave DevTools MCP
+# Brave MCP
 
 > Fork of [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) ported to **Brave Browser**.
+>
+> npm: `brave-mcp` · repo: `triuzzi/brave-devtools-mcp`
 
-`brave-devtools-mcp` lets your coding agent (such as Claude, Cursor, Gemini or Copilot)
+`brave-mcp` lets your coding agent (such as Claude, Cursor, Gemini or Copilot)
 control and inspect a live Brave browser. It acts as a Model-Context-Protocol
 (MCP) server, giving your AI coding assistant access to the full power of
 DevTools for reliable automation, in-depth debugging, and performance analysis.
@@ -39,11 +41,26 @@ You can explicitly enable them with `--usage-statistics` if desired.
 - [Brave Browser](https://brave.com/) current release version or newer.
 - [npm](https://www.npmjs.com/)
 
-> **Note:** Do **not** use `chrome-devtools-mcp@latest` from npm — that installs Google's Chrome-oriented server. This fork is `brave-devtools-mcp`.
+> **Note:** Do **not** use `chrome-devtools-mcp@latest` from npm — that installs Google's Chrome-oriented server. This fork is `brave-mcp`.
 
 ## Setup
 
-### 1. Clone and build
+### Quick start (via npm)
+
+```json
+{
+  "mcpServers": {
+    "brave-devtools": {
+      "command": "npx",
+      "args": ["-y", "brave-mcp@latest"]
+    }
+  }
+}
+```
+
+Add this to your MCP client config and you're done. Works with **Claude Code** (`~/.mcp.json`), **Cursor** (Settings → MCP), **VS Code Copilot**, and any other MCP client.
+
+### From source (for development)
 
 ```sh
 git clone https://github.com/triuzzi/brave-devtools-mcp.git
@@ -54,9 +71,7 @@ npm run build
 
 Run `npm run build` again after `git pull` when you update the repo.
 
-### 2. Configure your MCP client
-
-Point your MCP config at the built CLI. Use an **absolute path** on your machine:
+Then point your MCP config at the built CLI with an **absolute path**:
 
 ```json
 {
@@ -122,10 +137,23 @@ brave-browser --remote-debugging-port=9222
 {
   "mcpServers": {
     "brave-devtools": {
+      "command": "npx",
+      "args": ["-y", "brave-mcp@latest", "--browserUrl", "http://localhost:9222"]
+    }
+  }
+}
+```
+
+Or if running from source:
+
+```json
+{
+  "mcpServers": {
+    "brave-devtools": {
       "command": "node",
       "args": [
         "/absolute/path/to/brave-devtools-mcp/build/src/bin/brave-devtools-mcp.js",
-        "--browserUrl", "http://127.0.0.1:9222"
+        "--browserUrl", "http://localhost:9222"
       ]
     }
   }
