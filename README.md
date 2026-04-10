@@ -64,6 +64,67 @@ You can disable these update checks by setting the `CHROME_DEVTOOLS_MCP_NO_UPDAT
 - [Chrome](https://www.google.com/chrome/) current stable version or newer.
 - [npm](https://www.npmjs.com/)
 
+## Local setup (Brave fork / Cursor)
+
+This fork drives **Brave Browser**; the npm package name is **`brave-devtools-mcp`** (see `package.json`). Do **not** use `chrome-devtools-mcp@latest` from npm when you want *this* codebase—that installs Google's Chrome-oriented server, not this repository.
+
+### Prerequisites
+
+- **Node.js** v20.19 or newer (matches `engines` in `package.json`).
+- **Brave** installed in the default location for your OS, or set **`BRAVE_PATH`** to the browser binary.
+
+### Clone and build
+
+```sh
+git clone https://github.com/triuzzi/brave-devtools-mcp.git
+cd brave-devtools-mcp
+npm install
+npm run build
+```
+
+Run `npm run build` again after `git pull` when you update the repo.
+
+### Cursor (or any MCP client using a local command)
+
+Point your MCP config at the **built** CLI with Node. Use an **absolute path** on your machine:
+
+```json
+"brave-devtools": {
+  "command": "node",
+  "args": [
+    "/absolute/path/to/brave-devtools-mcp/build/src/bin/brave-devtools-mcp.js"
+  ]
+}
+```
+
+In **Cursor**: **Settings → MCP → New MCP Server**, or add the same block to your user `mcp.json`. Restart Cursor after changing MCP configuration.
+
+Put optional server flags in `args` after the script path. To see what this build accepts:
+
+```sh
+node /absolute/path/to/brave-devtools-mcp/build/src/bin/brave-devtools-mcp.js --help
+```
+
+If Brave is not detected, set **`BRAVE_PATH`** in the MCP server `env` object. Example on macOS:
+
+```json
+"env": {
+  "BRAVE_PATH": "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+}
+```
+
+### Remote debugging (Brave)
+
+Use **`brave://inspect/#remote-debugging`** to enable remote debugging (not `chrome://inspect/...`).
+
+### Optional: `npx` from GitHub
+
+You can run straight from the repository without keeping a clone (needs network; a local build is usually better for daily use):
+
+```json
+"args": ["-y", "github:triuzzi/brave-devtools-mcp"]
+```
+
 ## Getting started
 
 Add the following config to your MCP client:
