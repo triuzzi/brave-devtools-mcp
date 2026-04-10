@@ -338,36 +338,51 @@ await test('30. resize_page', () =>
 );
 
 // ── 10. Performance (tools: performance_start_trace, performance_stop_trace, performance_analyze_insight) ──
+// Navigate to a real page so the trace produces network/rendering insights.
 
 console.log('\n--- Performance ---');
 
+await call('navigate_page', {type: 'url', url: 'https://example.com'});
+await new Promise(r => setTimeout(r, 2000));
+
 const tracePath = path.join(TMP, 'brave-mcp-test-trace.json');
 
-await test('31. performance_start_trace', () =>
-  call('performance_start_trace', {reload: true, autoStop: true, filePath: tracePath}),
-  PERF_TIMEOUT_MS,
-);
-
+// start_trace with autoStop returns the trace summary including insight set IDs.
+// stop_trace returns only the visualization image.
 {
-  const {text} = await test('32. performance_stop_trace', () =>
+  const {text: startText} = await test('31. performance_start_trace', () =>
+    call('performance_start_trace', {reload: true, autoStop: true, filePath: tracePath}),
+    PERF_TIMEOUT_MS,
+  );
+
+  await test('32. performance_stop_trace', () =>
     call('performance_stop_trace', {filePath: path.join(TMP, 'brave-mcp-test-trace.json.gz')}),
     PERF_TIMEOUT_MS,
   );
 
-  // Extract insight set ID from trace results (format varies)
-  const insightSetMatch = text.match(/id="([^"]+)"/) || text.match(/insightSetId[=: ]*"?([^\s"]+)/);
-  if (insightSetMatch) {
+  // The start_trace output contains: "## insight set id: NAVIGATION_0"
+  const insightSetMatch = startText.match(/insight set id:\s*(\S+)/);
+  // Available insight names from the trace (e.g., LCPBreakdown, NetworkDependencyTree)
+  const insightNameMatch = startText.match(/insight name:\s*(\S+)/);
+
+  if (insightSetMatch && insightNameMatch) {
     await test('33. performance_analyze_insight', () =>
       call('performance_analyze_insight', {
         insightSetId: insightSetMatch[1],
-        insightName: 'DocumentLatency',
+        insightName: insightNameMatch[1],
       }),
       PERF_TIMEOUT_MS,
     );
   } else {
-    skip('33. performance_analyze_insight', 'no insight set returned from trace (normal for local file:// pages)');
+    failed.push({name: '33. performance_analyze_insight', error: `insight set or name not found (set=${insightSetMatch?.[1]}, name=${insightNameMatch?.[1]})`});
+    console.log('  FAIL  33. performance_analyze_insight');
+    console.log(`        insight set or name not found in trace output`);
   }
 }
+
+// Navigate back to test fixture for remaining tests
+await call('navigate_page', {type: 'url', url: `file://${FIXTURE_PATH}`});
+await new Promise(r => setTimeout(r, 1000));
 
 // ── 11. Memory (tool: take_memory_snapshot) ──
 
