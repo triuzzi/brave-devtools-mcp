@@ -21,7 +21,7 @@ import type {
 } from 'puppeteer-core';
 import sinon from 'sinon';
 
-import type {ParsedArguments} from '../src/bin/chrome-devtools-mcp-cli-options.js';
+import type {ParsedArguments} from '../src/bin/brave-devtools-mcp-cli-options.js';
 import {McpContext} from '../src/McpContext.js';
 import {McpResponse} from '../src/McpResponse.js';
 import {stableIdSymbol} from '../src/PageCollector.js';
@@ -360,14 +360,14 @@ export async function assertDaemonIsNotRunning() {
   const result = await runCli(['status']);
   assert.strictEqual(
     result.stdout,
-    'chrome-devtools-mcp daemon is not running.\n',
+    'brave-devtools-mcp daemon is not running.\n',
   );
 }
 
 export async function assertDaemonIsRunning() {
   const result = await runCli(['status']);
   assert.ok(
-    result.stdout.startsWith('chrome-devtools-mcp daemon is running.\n'),
-    'chrome-devtools-mcp daemon is not running',
+    result.stdout.startsWith('brave-devtools-mcp daemon is running.\n'),
+    'brave-devtools-mcp daemon is not running',
   );
 }
