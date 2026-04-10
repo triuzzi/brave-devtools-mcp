@@ -1,11 +1,11 @@
 {
-  "name": "chrome-devtools-mcp",
-  "version": "0.21.0",
-  "description": "Reliable automation, in-depth debugging, and performance analysis in Chrome using Chrome DevTools and Puppeteer",
+  "name": "brave-devtools-mcp",
+  "version": "0.1.0",
+  "description": "Reliable automation, in-depth debugging, and performance analysis in Brave using DevTools and Puppeteer",
   "mcpServers": {
-    "chrome-devtools": {
+    "brave-devtools": {
       "command": "npx",
-      "args": ["chrome-devtools-mcp@latest"]
+      "args": ["brave-devtools-mcp@latest"]
     }
   }
 }
