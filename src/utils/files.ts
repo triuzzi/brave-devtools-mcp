@@ -14,7 +14,7 @@ export async function saveTemporaryFile(
 ): Promise<{filepath: string}> {
   try {
     const dir = await fs.mkdtemp(
-      path.join(os.tmpdir(), 'chrome-devtools-mcp-'),
+      path.join(os.tmpdir(), 'brave-devtools-mcp-'),
     );
 
     const filepath = path.join(dir, filename);
