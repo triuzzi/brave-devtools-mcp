@@ -7,7 +7,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type {ParsedArguments} from '../build/src/bin/chrome-devtools-mcp-cli-options.js';
+import type {ParsedArguments} from '../build/src/bin/brave-devtools-mcp-cli-options.js';
 import {
   applyToExistingMetrics,
   generateToolMetrics,
