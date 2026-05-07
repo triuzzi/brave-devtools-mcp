@@ -10,11 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {logger} from './logger.js';
-import type {
-  Browser,
-  LaunchOptions,
-  Target,
-} from './third_party/index.js';
+import type {Browser, LaunchOptions, Target} from './third_party/index.js';
 import {puppeteer} from './third_party/index.js';
 
 let browser: Browser | undefined;
@@ -43,10 +39,16 @@ function makeTargetFilter(enableExtensions = false) {
   }
 
   return function targetFilter(target: Target): boolean {
-    if (target.url() === 'brave://newtab/' || target.url() === 'chrome://newtab/') {
+    if (
+      target.url() === 'brave://newtab/' ||
+      target.url() === 'chrome://newtab/'
+    ) {
       return true;
     }
-    if (target.url().startsWith('brave://inspect') || target.url().startsWith('chrome://inspect')) {
+    if (
+      target.url().startsWith('brave://inspect') ||
+      target.url().startsWith('chrome://inspect')
+    ) {
       return true;
     }
     for (const prefix of ignoredPrefixes) {
@@ -62,7 +64,9 @@ function resolveBraveExecutablePath(channel?: Channel): string {
   const envPath = process.env['BRAVE_PATH'];
   if (envPath) {
     if (!fs.existsSync(envPath)) {
-      throw new Error(`BRAVE_PATH points to ${envPath} but that file does not exist.`);
+      throw new Error(
+        `BRAVE_PATH points to ${envPath} but that file does not exist.`,
+      );
     }
     return envPath;
   }
@@ -73,7 +77,8 @@ function resolveBraveExecutablePath(channel?: Channel): string {
     const paths: Record<Channel, string> = {
       release: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
       beta: '/Applications/Brave Browser Beta.app/Contents/MacOS/Brave Browser Beta',
-      nightly: '/Applications/Brave Browser Nightly.app/Contents/MacOS/Brave Browser Nightly',
+      nightly:
+        '/Applications/Brave Browser Nightly.app/Contents/MacOS/Brave Browser Nightly',
       dev: '/Applications/Brave Browser Dev.app/Contents/MacOS/Brave Browser Dev',
     };
     const resolved = paths[channel ?? 'release'];
@@ -95,7 +100,9 @@ function resolveBraveExecutablePath(channel?: Channel): string {
     const candidates = paths[channel ?? 'release'];
     for (const candidate of candidates) {
       try {
-        const resolvedPath = execSync(`which ${candidate}`, {encoding: 'utf8'}).trim();
+        const resolvedPath = execSync(`which ${candidate}`, {
+          encoding: 'utf8',
+        }).trim();
         if (resolvedPath) {
           return resolvedPath;
         }
@@ -113,20 +120,68 @@ function resolveBraveExecutablePath(channel?: Channel): string {
     const localAppData = process.env['LOCALAPPDATA'] ?? '';
     const paths: Record<Channel, string[]> = {
       release: [
-        path.join(programFiles, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
-        path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+        path.join(
+          programFiles,
+          'BraveSoftware',
+          'Brave-Browser',
+          'Application',
+          'brave.exe',
+        ),
+        path.join(
+          localAppData,
+          'BraveSoftware',
+          'Brave-Browser',
+          'Application',
+          'brave.exe',
+        ),
       ],
       beta: [
-        path.join(programFiles, 'BraveSoftware', 'Brave-Browser-Beta', 'Application', 'brave.exe'),
-        path.join(localAppData, 'BraveSoftware', 'Brave-Browser-Beta', 'Application', 'brave.exe'),
+        path.join(
+          programFiles,
+          'BraveSoftware',
+          'Brave-Browser-Beta',
+          'Application',
+          'brave.exe',
+        ),
+        path.join(
+          localAppData,
+          'BraveSoftware',
+          'Brave-Browser-Beta',
+          'Application',
+          'brave.exe',
+        ),
       ],
       nightly: [
-        path.join(programFiles, 'BraveSoftware', 'Brave-Browser-Nightly', 'Application', 'brave.exe'),
-        path.join(localAppData, 'BraveSoftware', 'Brave-Browser-Nightly', 'Application', 'brave.exe'),
+        path.join(
+          programFiles,
+          'BraveSoftware',
+          'Brave-Browser-Nightly',
+          'Application',
+          'brave.exe',
+        ),
+        path.join(
+          localAppData,
+          'BraveSoftware',
+          'Brave-Browser-Nightly',
+          'Application',
+          'brave.exe',
+        ),
       ],
       dev: [
-        path.join(programFiles, 'BraveSoftware', 'Brave-Browser-Dev', 'Application', 'brave.exe'),
-        path.join(localAppData, 'BraveSoftware', 'Brave-Browser-Dev', 'Application', 'brave.exe'),
+        path.join(
+          programFiles,
+          'BraveSoftware',
+          'Brave-Browser-Dev',
+          'Application',
+          'brave.exe',
+        ),
+        path.join(
+          localAppData,
+          'BraveSoftware',
+          'Brave-Browser-Dev',
+          'Application',
+          'brave.exe',
+        ),
       ],
     };
     const candidates = paths[channel ?? 'release'];
@@ -149,16 +204,41 @@ function resolveBraveUserDataDir(channel?: Channel): string {
 
   if (platform === 'darwin') {
     const dirs: Record<Channel, string> = {
-      release: path.join(home, 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser'),
-      beta: path.join(home, 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser-Beta'),
-      nightly: path.join(home, 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser-Nightly'),
-      dev: path.join(home, 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser-Dev'),
+      release: path.join(
+        home,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser',
+      ),
+      beta: path.join(
+        home,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser-Beta',
+      ),
+      nightly: path.join(
+        home,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser-Nightly',
+      ),
+      dev: path.join(
+        home,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser-Dev',
+      ),
     };
     return dirs[channel ?? 'release'];
   }
 
   if (platform === 'linux') {
-    const configDir = process.env['XDG_CONFIG_HOME'] ?? path.join(home, '.config');
+    const configDir =
+      process.env['XDG_CONFIG_HOME'] ?? path.join(home, '.config');
     const dirs: Record<Channel, string> = {
       release: path.join(configDir, 'BraveSoftware', 'Brave-Browser'),
       beta: path.join(configDir, 'BraveSoftware', 'Brave-Browser-Beta'),
@@ -169,12 +249,33 @@ function resolveBraveUserDataDir(channel?: Channel): string {
   }
 
   if (platform === 'win32') {
-    const localAppData = process.env['LOCALAPPDATA'] ?? path.join(home, 'AppData', 'Local');
+    const localAppData =
+      process.env['LOCALAPPDATA'] ?? path.join(home, 'AppData', 'Local');
     const dirs: Record<Channel, string> = {
-      release: path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'User Data'),
-      beta: path.join(localAppData, 'BraveSoftware', 'Brave-Browser-Beta', 'User Data'),
-      nightly: path.join(localAppData, 'BraveSoftware', 'Brave-Browser-Nightly', 'User Data'),
-      dev: path.join(localAppData, 'BraveSoftware', 'Brave-Browser-Dev', 'User Data'),
+      release: path.join(
+        localAppData,
+        'BraveSoftware',
+        'Brave-Browser',
+        'User Data',
+      ),
+      beta: path.join(
+        localAppData,
+        'BraveSoftware',
+        'Brave-Browser-Beta',
+        'User Data',
+      ),
+      nightly: path.join(
+        localAppData,
+        'BraveSoftware',
+        'Brave-Browser-Nightly',
+        'User Data',
+      ),
+      dev: path.join(
+        localAppData,
+        'BraveSoftware',
+        'Brave-Browser-Dev',
+        'User Data',
+      ),
     };
     return dirs[channel ?? 'release'];
   }
@@ -306,7 +407,8 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
       ? `brave-profile-${channel}`
       : 'brave-profile';
 
-  const executablePath = options.executablePath ?? resolveBraveExecutablePath(channel);
+  const executablePath =
+    options.executablePath ?? resolveBraveExecutablePath(channel);
 
   let userDataDir = options.userDataDir;
   if (!isolated && !userDataDir) {

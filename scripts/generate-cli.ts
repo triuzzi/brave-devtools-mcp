@@ -21,7 +21,7 @@ import {createTools} from '../build/src/tools/tools.js';
 
 const OUTPUT_PATH = path.join(
   import.meta.dirname,
-  '../src/bin/chrome-devtools-cli-options.ts',
+  '../src/bin/brave-devtools-cli-options.ts',
 );
 
 async function fetchTools() {
@@ -35,7 +35,7 @@ async function fetchTools() {
   const transport = new StdioClientTransport({
     command: 'node',
     args: [serverPath, '--viaCli'],
-    env: {...process.env, CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
+    env: {...process.env, BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
   });
 
   const client = new Client(

@@ -94,7 +94,8 @@ export const cliOptions = {
   },
   executablePath: {
     type: 'string',
-    description: 'Path to custom Brave executable. Can also be set via BRAVE_PATH environment variable.',
+    description:
+      'Path to custom Brave executable. Can also be set via BRAVE_PATH environment variable.',
     conflicts: ['browserUrl', 'wsEndpoint'],
     alias: 'e',
   },
@@ -252,8 +253,7 @@ export const cliOptions = {
   usageStatistics: {
     type: 'boolean',
     default: false,
-    describe:
-      'Usage statistics collection (disabled by default in this fork).',
+    describe: 'Usage statistics collection (disabled by default in this fork).',
   },
   clearcutEndpoint: {
     type: 'string',

@@ -57,6 +57,27 @@ jobs:
         shell: bash
         run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
 
+      - name: Install Brave Browser (Ubuntu)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        shell: bash
+        run: |
+          sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+            https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/brave-browser-release.list
+          sudo apt-get update
+          sudo apt-get install -y brave-browser
+
+      - name: Install Brave Browser (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        shell: bash
+        run: brew install --cask brave-browser
+
+      - name: Install Brave Browser (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: choco install brave -y --no-progress
+
       - name: Run tests
         shell: bash
         # Retry tests if they fail in the merge queue.
