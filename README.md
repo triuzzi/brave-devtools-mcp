@@ -96,7 +96,9 @@ If Brave is not detected automatically, set `BRAVE_PATH`:
   "mcpServers": {
     "brave-devtools": {
       "command": "node",
-      "args": ["/absolute/path/to/brave-devtools-mcp/build/src/bin/brave-devtools-mcp.js"],
+      "args": [
+        "/absolute/path/to/brave-devtools-mcp/build/src/bin/brave-devtools-mcp.js"
+      ],
       "env": {
         "BRAVE_PATH": "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
       }
@@ -139,7 +141,12 @@ brave-browser --remote-debugging-port=9222
   "mcpServers": {
     "brave-devtools": {
       "command": "npx",
-      "args": ["-y", "brave-mcp@latest", "--browserUrl", "http://localhost:9222"]
+      "args": [
+        "-y",
+        "brave-mcp@latest",
+        "--browserUrl",
+        "http://localhost:9222"
+      ]
     }
   }
 }
@@ -154,7 +161,8 @@ Or if running from source:
       "command": "node",
       "args": [
         "/absolute/path/to/brave-devtools-mcp/build/src/bin/brave-devtools-mcp.js",
-        "--browserUrl", "http://localhost:9222"
+        "--browserUrl",
+        "http://localhost:9222"
       ]
     }
   }
@@ -198,7 +206,8 @@ If you are interested in only basic browser tasks, use `--slim` mode:
       "command": "node",
       "args": [
         "/absolute/path/to/brave-devtools-mcp/build/src/bin/brave-devtools-mcp.js",
-        "--slim", "--headless"
+        "--slim",
+        "--headless"
       ]
     }
   }
@@ -650,16 +659,16 @@ The Brave DevTools MCP server supports the following configuration options:
 <!-- BEGIN AUTO GENERATED OPTIONS -->
 
 - **`--autoConnect`/ `--auto-connect`**
-  If specified, automatically connects to a browser (Chrome 144+) running locally from the user data directory identified by the channel param (default channel is stable). Requires the remote debugging server to be started in the Chrome instance via chrome://inspect/#remote-debugging.
+  If specified, automatically connects to a Brave instance running locally from the user data directory identified by the channel param (default channel is release). Requires the remote debugging server to be started in the Brave instance via brave://inspect/#remote-debugging.
   - **Type:** boolean
   - **Default:** `false`
 
 - **`--browserUrl`/ `--browser-url`, `-u`**
-  Connect to a running, debuggable Chrome instance (e.g. `http://127.0.0.1:9222`). For more details see: https://github.com/ChromeDevTools/chrome-devtools-mcp#connecting-to-a-running-chrome-instance.
+  Connect to a running, debuggable Brave instance (e.g. `http://127.0.0.1:9222`).
   - **Type:** string
 
 - **`--wsEndpoint`/ `--ws-endpoint`, `-w`**
-  WebSocket endpoint to connect to a running Chrome instance (e.g., ws://127.0.0.1:9222/devtools/browser/<id>). Alternative to --browserUrl.
+  WebSocket endpoint to connect to a running Brave instance (e.g., ws://127.0.0.1:9222/devtools/browser/<id>). Alternative to --browserUrl.
   - **Type:** string
 
 - **`--wsHeaders`/ `--ws-headers`**
@@ -672,7 +681,7 @@ The Brave DevTools MCP server supports the following configuration options:
   - **Default:** `false`
 
 - **`--executablePath`/ `--executable-path`, `-e`**
-  Path to custom Chrome executable.
+  Path to custom Brave executable. Can also be set via BRAVE_PATH environment variable.
   - **Type:** string
 
 - **`--isolated`**
@@ -680,24 +689,24 @@ The Brave DevTools MCP server supports the following configuration options:
   - **Type:** boolean
 
 - **`--userDataDir`/ `--user-data-dir`**
-  Path to the user data directory for Chrome. Default is $HOME/.cache/chrome-devtools-mcp/chrome-profile$CHANNEL_SUFFIX_IF_NON_STABLE
+  Path to the user data directory for Brave. Default is $HOME/.cache/brave-devtools-mcp/brave-profile$CHANNEL_SUFFIX_IF_NON_RELEASE
   - **Type:** string
 
 - **`--channel`**
-  Specify a different Chrome channel that should be used. The default is the stable channel version.
+  Specify a different Brave channel that should be used. The default is the release channel.
   - **Type:** string
-  - **Choices:** `canary`, `dev`, `beta`, `stable`
+  - **Choices:** `release`, `beta`, `nightly`, `dev`
 
 - **`--logFile`/ `--log-file`**
   Path to a file to write debug logs to. Set the env variable `DEBUG` to `*` to enable verbose logs. Useful for submitting bug reports.
   - **Type:** string
 
 - **`--viewport`**
-  Initial viewport size for the Chrome instances started by the server. For example, `1280x720`. In headless mode, max size is 3840x2160px.
+  Initial viewport size for the Brave instances started by the server. For example, `1280x720`. In headless mode, max size is 3840x2160px.
   - **Type:** string
 
 - **`--proxyServer`/ `--proxy-server`**
-  Proxy server configuration for Chrome passed as --proxy-server when launching the browser. See https://www.chromium.org/developers/design-documents/network-settings/ for details.
+  Proxy server configuration for Brave passed as --proxy-server when launching the browser. See https://www.chromium.org/developers/design-documents/network-settings/ for details.
   - **Type:** string
 
 - **`--acceptInsecureCerts`/ `--accept-insecure-certs`**
@@ -717,15 +726,15 @@ The Brave DevTools MCP server supports the following configuration options:
   - **Type:** string
 
 - **`--categoryExperimentalWebmcp`/ `--category-experimental-webmcp`**
-  Set to true to enable debugging WebMCP tools. Requires Chrome 149+ with the following flags: `--enable-features=WebMCPTesting,DevToolsWebMCPSupport`
+  Set to true to enable debugging WebMCP tools. Requires Brave with the following flags: `--enable-features=WebMCPTesting,DevToolsWebMCPSupport`
   - **Type:** boolean
 
-- **`--chromeArg`/ `--chrome-arg`**
-  Additional arguments for Chrome. Only applies when Chrome is launched by chrome-devtools-mcp.
+- **`--braveArg`/ `--brave-arg`**
+  Additional arguments for Brave. Only applies when Brave is launched by brave-devtools-mcp.
   - **Type:** array
 
-- **`--ignoreDefaultChromeArg`/ `--ignore-default-chrome-arg`**
-  Explicitly disable default arguments for Chrome. Only applies when Chrome is launched by chrome-devtools-mcp.
+- **`--ignoreDefaultBraveArg`/ `--ignore-default-brave-arg`**
+  Explicitly disable default arguments for Brave. Only applies when Brave is launched by brave-devtools-mcp.
   - **Type:** array
 
 - **`--categoryEmulation`/ `--category-emulation`**
@@ -759,9 +768,9 @@ The Brave DevTools MCP server supports the following configuration options:
   - **Default:** `true`
 
 - **`--usageStatistics`/ `--usage-statistics`**
-  Set to false to opt-out of usage statistics collection. Google collects usage data to improve the tool, handled under the Google Privacy Policy (https://policies.google.com/privacy). This is independent from Chrome browser metrics. Disabled if `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS` or `CI` env variables are set.
+  Usage statistics collection (disabled by default in this fork).
   - **Type:** boolean
-  - **Default:** `true`
+  - **Default:** `false`
 
 - **`--slim`**
   Exposes a "slim" set of 3 tools covering navigation, script execution and screenshots only. Useful for basic browser tasks.

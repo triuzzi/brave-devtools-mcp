@@ -38,6 +38,7 @@ export default defineConfig([
             'eslint.config.mjs',
             'rollup.config.mjs',
             'skills/memory-leak-debugging/references/compare_snapshots.js',
+            'tests/e2e/brave-integration.test.mjs',
           ],
         },
       },
