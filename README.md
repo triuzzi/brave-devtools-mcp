@@ -38,7 +38,7 @@ You can explicitly enable them with `--usage-statistics` if desired.
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) v20.19 or a newer [latest maintenance LTS](https://github.com/nodejs/Release#release-schedule) version.
+- [Node.js](https://nodejs.org/) [LTS](https://github.com/nodejs/Release#release-schedule) version.
 - [Brave Browser](https://brave.com/) current release version or newer.
 - [npm](https://www.npmjs.com/)
 
@@ -279,7 +279,7 @@ To install Chrome DevTools MCP with skills, add the marketplace registry in Clau
 Then, install the plugin:
 
 ```sh
-/plugin install chrome-devtools-mcp
+/plugin install chrome-devtools-mcp@chrome-devtools-plugins
 ```
 
 Restart Claude Code to have the MCP server and skills load (check with `/skills`).
@@ -367,7 +367,7 @@ and the expert guidance it needs to use them effectively.
 
 1.  Open the **Command Palette** (`Cmd+Shift+P` on macOS or `Ctrl+Shift+P` on Windows/Linux).
 2.  Search for and run the **Chat: Install Plugin From Source** command.
-3.  Paste in our repository URL: `https://github.com/ChromeDevTools/chrome-devtools-mcp`
+3.  Paste in our repository name: `ChromeDevTools/chrome-devtools-mcp`.
 
 That's it! Your agent is now supercharged with Chrome DevTools capabilities.
 
@@ -632,11 +632,14 @@ If you run into any issues, checkout our [troubleshooting guide](./docs/troubles
   - [`take_snapshot`](docs/tool-reference.md#take_snapshot)
   - [`screencast_start`](docs/tool-reference.md#screencast_start)
   - [`screencast_stop`](docs/tool-reference.md#screencast_stop)
-- **Memory** (4 tools)
-  - [`take_memory_snapshot`](docs/tool-reference.md#take_memory_snapshot)
-  - [`get_memory_snapshot_details`](docs/tool-reference.md#get_memory_snapshot_details)
-  - [`get_nodes_by_class`](docs/tool-reference.md#get_nodes_by_class)
-  - [`load_memory_snapshot`](docs/tool-reference.md#load_memory_snapshot)
+- **Memory** (7 tools)
+  - [`take_heapsnapshot`](docs/tool-reference.md#take_heapsnapshot)
+  - [`close_heapsnapshot`](docs/tool-reference.md#close_heapsnapshot)
+  - [`get_heapsnapshot_class_nodes`](docs/tool-reference.md#get_heapsnapshot_class_nodes)
+  - [`get_heapsnapshot_details`](docs/tool-reference.md#get_heapsnapshot_details)
+  - [`get_heapsnapshot_retainers`](docs/tool-reference.md#get_heapsnapshot_retainers)
+  - [`get_heapsnapshot_retaining_paths`](docs/tool-reference.md#get_heapsnapshot_retaining_paths)
+  - [`get_heapsnapshot_summary`](docs/tool-reference.md#get_heapsnapshot_summary)
 - **Extensions** (5 tools)
   - [`install_extension`](docs/tool-reference.md#install_extension)
   - [`list_extensions`](docs/tool-reference.md#list_extensions)
@@ -713,8 +716,28 @@ The Brave DevTools MCP server supports the following configuration options:
   If enabled, ignores errors relative to self-signed and expired certificates. Use with caution.
   - **Type:** boolean
 
+- **`--experimentalPageIdRouting`/ `--experimental-page-id-routing`**
+  Whether to expose pageId on page-scoped tools and route requests by page ID (useful for concurrent agent sessions).
+  - **Type:** boolean
+
+- **`--experimentalDevtools`/ `--experimental-devtools`**
+  Whether to enable automation over DevTools targets
+  - **Type:** boolean
+
 - **`--experimentalVision`/ `--experimental-vision`**
   Whether to enable coordinate-based tools such as click_at(x,y). Usually requires a computer-use model able to produce accurate coordinates by looking at screenshots.
+  - **Type:** boolean
+
+- **`--memoryDebugging`/ `--memory-debugging`, `-experimentalMemory`**
+  Whether to enable memory debugging tools.
+  - **Type:** boolean
+
+- **`--experimentalStructuredContent`/ `--experimental-structured-content`**
+  Whether to output structured formatted content.
+  - **Type:** boolean
+
+- **`--experimentalIncludeAllPages`/ `--experimental-include-all-pages`**
+  Whether to include all kinds of pages such as webviews or background pages as pages.
   - **Type:** boolean
 
 - **`--experimentalScreencast`/ `--experimental-screencast`**
@@ -731,6 +754,14 @@ The Brave DevTools MCP server supports the following configuration options:
 
 - **`--braveArg`/ `--brave-arg`**
   Additional arguments for Brave. Only applies when Brave is launched by brave-devtools-mcp.
+  - **Type:** array
+
+- **`--blockedUrlPattern`/ `--blocked-url-pattern`**
+  Restricts network access by blocking specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Silently detaches from targets with blocked URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns.
+  - **Type:** array
+
+- **`--allowedUrlPattern`/ `--allowed-url-pattern`**
+  Restricts network access by allowing only specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Requires Chrome 149+. Silently detaches from targets with unallowed URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns.
   - **Type:** array
 
 - **`--ignoreDefaultBraveArg`/ `--ignore-default-brave-arg`**
@@ -777,7 +808,7 @@ The Brave DevTools MCP server supports the following configuration options:
   - **Type:** boolean
 
 - **`--redactNetworkHeaders`/ `--redact-network-headers`**
-  If true, redacts some of the network headers considered senstive before returning to the client.
+  If true, redacts some of the network headers considered sensitive before returning to the client.
   - **Type:** boolean
   - **Default:** `false`
 
@@ -825,6 +856,34 @@ To get the WebSocket endpoint from a running Chrome instance, visit `http://127.
 You can also run `npx chrome-devtools-mcp@latest --help` to see all available configuration options.
 
 ## Concepts
+
+### Concurrent sessions
+
+Most MCP clients start one Chrome DevTools MCP server per conversation. If your
+client shares a single server instance across concurrent agents or subagents,
+start the server with `--experimentalPageIdRouting`. This exposes `pageId` on
+page-scoped tools so each agent can route tool calls to the tab it is working
+with.
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--experimentalPageIdRouting"
+      ]
+    }
+  }
+}
+```
+
+If you run multiple independent MCP client sessions and want each session to
+launch its own temporary Chrome profile, also pass `--isolated`. This avoids
+sharing the default Chrome DevTools MCP user data directory between those
+server instances.
 
 ### User data directory
 

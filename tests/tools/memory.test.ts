@@ -12,20 +12,23 @@ import {join} from 'node:path';
 import {describe, it} from 'node:test';
 
 import {
-  takeMemorySnapshot,
-  exploreMemorySnapshot,
-  getMemorySnapshotDetails,
-  getNodesByClass,
+  takeHeapSnapshot,
+  getHeapSnapshotSummary,
+  getHeapSnapshotDetails,
+  getHeapSnapshotClassNodes,
+  getHeapSnapshotRetainers,
+  closeHeapSnapshot,
+  getHeapSnapshotRetainingPaths,
 } from '../../src/tools/memory.js';
 import {withMcpContext} from '../utils.js';
 
 describe('memory', () => {
-  describe('take_memory_snapshot', () => {
+  describe('take_heapsnapshot', () => {
     it('with default options', async () => {
       await withMcpContext(async (response, context) => {
         const filePath = join(tmpdir(), 'test-screenshot.heapsnapshot');
         try {
-          await takeMemorySnapshot.handler(
+          await takeHeapSnapshot.handler(
             {params: {filePath}, page: context.getSelectedMcpPage()},
             response,
             context,
@@ -42,7 +45,7 @@ describe('memory', () => {
     });
   });
 
-  describe('load_memory_snapshot', () => {
+  describe('get_heapsnapshot_summary', () => {
     it('with default options', async t => {
       await withMcpContext(async (response, context) => {
         const filePath = join(
@@ -52,7 +55,7 @@ describe('memory', () => {
 
         assert.ok(existsSync(filePath), `Fixture not found at ${filePath}`);
 
-        await exploreMemorySnapshot.handler(
+        await getHeapSnapshotSummary.handler(
           {params: {filePath}},
           response,
           context,
@@ -60,19 +63,19 @@ describe('memory', () => {
 
         // Call handle to trigger formatting (similar to network tests)
         const responseData = await response.handle(
-          exploreMemorySnapshot.name,
+          getHeapSnapshotSummary.name,
           context,
         );
         const output = responseData.content
           .map(c => (c.type === 'text' ? c.text : ''))
           .join('\n');
 
-        t.assert.snapshot?.(output);
+        t.assert.snapshot(output);
       });
     });
   });
 
-  describe('get_memory_snapshot_details', () => {
+  describe('get_heapsnapshot_details', () => {
     it('with default options', async t => {
       await withMcpContext(async (response, context) => {
         const filePath = join(
@@ -80,26 +83,26 @@ describe('memory', () => {
           'tests/fixtures/example.heapsnapshot',
         );
 
-        await getMemorySnapshotDetails.handler(
+        await getHeapSnapshotDetails.handler(
           {params: {filePath}},
           response,
           context,
         );
 
         const responseData = await response.handle(
-          getMemorySnapshotDetails.name,
+          getHeapSnapshotDetails.name,
           context,
         );
         const output = responseData.content
           .map(c => (c.type === 'text' ? c.text : ''))
           .join('\n');
 
-        t.assert.snapshot?.(output);
+        t.assert.snapshot(output);
       });
     });
   });
 
-  describe('get_nodes_by_class', () => {
+  describe('get_heapsnapshot_class_nodes', () => {
     it('with default options', async t => {
       await withMcpContext(async (response, context) => {
         const filePath = join(
@@ -109,14 +112,14 @@ describe('memory', () => {
 
         await context.getHeapSnapshotAggregates(filePath);
 
-        await getNodesByClass.handler(
-          {params: {filePath, uid: 19}},
+        await getHeapSnapshotClassNodes.handler(
+          {params: {filePath, id: 19}},
           response,
           context,
         );
 
         const responseData = await response.handle(
-          getNodesByClass.name,
+          getHeapSnapshotClassNodes.name,
           context,
         );
 
@@ -124,7 +127,7 @@ describe('memory', () => {
           .map(c => (c.type === 'text' ? c.text : ''))
           .join('\n');
 
-        t.assert.snapshot?.(output);
+        t.assert.snapshot(output);
       });
     });
 
@@ -138,12 +141,141 @@ describe('memory', () => {
         await context.getHeapSnapshotAggregates(filePath);
 
         await assert.rejects(
-          getNodesByClass.handler(
-            {params: {filePath, uid: 999999}},
+          getHeapSnapshotClassNodes.handler(
+            {params: {filePath, id: 999999}},
             response,
             context,
           ),
-          {message: 'Class with UID 999999 not found in heap snapshot'},
+          {message: 'Class with ID 999999 not found in heap snapshot'},
+        );
+      });
+    });
+  });
+
+  describe('get_heapsnapshot_retainers', () => {
+    it('with valid nodeId', async t => {
+      await withMcpContext(async (response, context) => {
+        const filePath = join(
+          process.cwd(),
+          'tests/fixtures/example.heapsnapshot',
+        );
+
+        await getHeapSnapshotRetainers.handler(
+          {params: {filePath, nodeId: 25341}},
+          response,
+          context,
+        );
+
+        const responseData = await response.handle(
+          getHeapSnapshotRetainers.name,
+          context,
+        );
+        const output = responseData.content
+          .map(c => (c.type === 'text' ? c.text : ''))
+          .join('\n');
+
+        t.assert.snapshot(output);
+      });
+    });
+  });
+
+  describe('close_heapsnapshot', () => {
+    it('with default options', async () => {
+      await withMcpContext(async (response, context) => {
+        const filePath = join(
+          process.cwd(),
+          'tests/fixtures/example.heapsnapshot',
+        );
+
+        await getHeapSnapshotSummary.handler(
+          {params: {filePath}},
+          response,
+          context,
+        );
+
+        assert.ok(context.hasHeapSnapshots());
+
+        await closeHeapSnapshot.handler(
+          {params: {filePath}},
+          response,
+          context,
+        );
+
+        assert.ok(
+          response.responseLines.includes(`Closed heap snapshot: ${filePath}`),
+        );
+        assert.ok(!context.hasHeapSnapshots());
+      });
+    });
+
+    it('with non-existent snapshot', async () => {
+      await withMcpContext(async (response, context) => {
+        const filePath = join(
+          process.cwd(),
+          'tests/fixtures/example.heapsnapshot',
+        );
+
+        await assert.rejects(
+          closeHeapSnapshot.handler({params: {filePath}}, response, context),
+          {
+            message: `Failed to close heap snapshot: ${filePath} was not loaded.`,
+          },
+        );
+      });
+    });
+  });
+
+  describe('get_heapsnapshot_retaining_paths', () => {
+    it('with valid nodeId', async t => {
+      await withMcpContext(async (response, context) => {
+        const filePath = join(
+          process.cwd(),
+          'tests/fixtures/example.heapsnapshot',
+        );
+
+        await getHeapSnapshotRetainingPaths.handler(
+          {params: {filePath, nodeId: 45901}},
+          response,
+          context,
+        );
+
+        const responseData = await response.handle(
+          getHeapSnapshotRetainingPaths.name,
+          context,
+        );
+        const output = responseData.content
+          .map(c => (c.type === 'text' ? c.text : ''))
+          .join('\n');
+
+        t.assert.snapshot(output);
+      });
+    });
+
+    it('reports when limits are reached', async () => {
+      await withMcpContext(async (response, context) => {
+        const filePath = join(
+          process.cwd(),
+          'tests/fixtures/example.heapsnapshot',
+        );
+
+        await getHeapSnapshotRetainingPaths.handler(
+          {params: {filePath, nodeId: 45901, maxDepth: 1}},
+          response,
+          context,
+        );
+
+        const responseData = await response.handle(
+          getHeapSnapshotRetainingPaths.name,
+          context,
+        );
+        const output = responseData.content
+          .map(c => (c.type === 'text' ? c.text : ''))
+          .join('\n');
+
+        assert.match(output, /No retaining paths found\./);
+        assert.match(
+          output,
+          /Note: results are truncated, the following limits were reached: depth\./,
         );
       });
     });

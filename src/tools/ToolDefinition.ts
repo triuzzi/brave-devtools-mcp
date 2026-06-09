@@ -5,7 +5,7 @@
  */
 
 import type {ParsedArguments} from '../bin/brave-devtools-mcp-cli-options.js';
-import type {AggregatedInfoWithUid} from '../HeapSnapshotManager.js';
+import type {AggregatedInfoWithId} from '../HeapSnapshotManager.js';
 import type {McpPage} from '../McpPage.js';
 import {zod} from '../third_party/index.js';
 import type {
@@ -24,12 +24,10 @@ import type {
   ExtensionServiceWorker,
 } from '../types.js';
 import type {PaginationOptions} from '../utils/types.js';
+import type {WaitForEventsResult} from '../WaitForHelper.js';
 
 import type {ToolCategory} from './categories.js';
-import type {
-  ToolGroup,
-  ToolDefinition as ThirdPartyDeveloperToolDefinition,
-} from './thirdPartyDeveloper.js';
+import type {ToolGroups} from './thirdPartyDeveloper.js';
 
 export interface BaseToolDefinition<
   Schema extends zod.ZodRawShape = zod.ZodRawShape,
@@ -47,6 +45,7 @@ export interface BaseToolDefinition<
   };
   schema: Schema;
   blockedByDialog: boolean;
+  verifyFilesSchema: Array<keyof Schema>;
 }
 
 export interface ToolDefinition<
@@ -117,6 +116,9 @@ export interface Response {
     nodes: DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange,
     options?: PaginationOptions,
   ): void;
+  setHeapSnapshotRetainingPaths(
+    retainingPaths: DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainingPaths,
+  ): void;
   setIncludePages(value: boolean): void;
   setIncludeNetworkRequests(
     value: boolean,
@@ -131,6 +133,7 @@ export interface Response {
     options?: PaginationOptions & {
       types?: string[];
       includePreservedMessages?: boolean;
+      serviceWorkerId?: string;
     },
   ): void;
   includeSnapshot(params?: SnapshotParams): void;
@@ -153,6 +156,7 @@ export interface Response {
   attachLighthouseResult(result: LighthouseData): void;
   setListThirdPartyDeveloperTools(): void;
   setListWebMcpTools(): void;
+  attachWaitForResult(result: WaitForEventsResult): void;
 }
 
 export type SupportedExtensions =
@@ -171,7 +175,7 @@ export type SupportedExtensions =
  * Only add methods used by tools/*.
  */
 export type Context = Readonly<{
-  validatePath(filePath?: string): void;
+  validatePath(filePath?: string): Promise<void>;
   isRunningPerformanceTrace(): boolean;
   setIsRunningPerformanceTrace(x: boolean): void;
   isCruxEnabled(): boolean;
@@ -233,17 +237,29 @@ export type Context = Readonly<{
   ): string | undefined;
   getHeapSnapshotAggregates(
     filePath: string,
-  ): Promise<Record<string, AggregatedInfoWithUid>>;
+  ): Promise<Record<string, AggregatedInfoWithId>>;
   getHeapSnapshotStats(
     filePath: string,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.Statistics>;
   getHeapSnapshotStaticData(
     filePath: string,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.StaticData | null>;
-  getHeapSnapshotNodesByUid(
+  getHeapSnapshotNodesById(
     filePath: string,
-    uid: number,
+    id: number,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange>;
+  getHeapSnapshotRetainers(
+    filePath: string,
+    nodeId: number,
+  ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange>;
+  closeHeapSnapshot(filePath: string): Promise<boolean>;
+  getHeapSnapshotRetainingPaths(
+    filePath: string,
+    nodeId: number,
+    maxDepth?: number,
+    maxNodes?: number,
+    maxSiblings?: number,
+  ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainingPaths>;
 }>;
 
 /**
@@ -251,6 +267,8 @@ export type Context = Readonly<{
  */
 export type ContextPage = Readonly<{
   readonly pptrPage: Page;
+  readonly cpuThrottlingRate: number;
+  readonly networkConditions: string | null;
   getAXNodeByUid(uid: string): TextSnapshotNode | undefined;
   getElementByUid(uid: string): Promise<ElementHandle<Element>>;
 
@@ -260,10 +278,9 @@ export type ContextPage = Readonly<{
   waitForEventsAfterAction(
     action: () => Promise<unknown>,
     options?: {timeout?: number; handleDialog?: 'accept' | 'dismiss' | string},
-  ): Promise<void>;
-  getThirdPartyDeveloperTools():
-    | ToolGroup<ThirdPartyDeveloperToolDefinition>
-    | undefined;
+  ): Promise<WaitForEventsResult>;
+  getThirdPartyDeveloperTools(): ToolGroups;
+
   executeThirdPartyDeveloperTool(
     toolName: string,
     params: Record<string, unknown>,
@@ -359,7 +376,7 @@ export const CLOSE_PAGE_ERROR =
   'The last open page cannot be closed. It is fine to keep it open.';
 
 export const pageIdSchema = {
-  pageId: zod.number().optional().describe('Targets a specific page by ID.'),
+  pageId: zod.number().describe('Targets a specific page by ID.'),
 };
 
 export const timeoutSchema = {
@@ -411,7 +428,7 @@ export function geolocationTransform(arg: string | undefined) {
   if (!arg) {
     return undefined;
   }
-  const [latitude, longitude] = arg.split('x').map(Number) as [number, number];
+  const [latitude, longitude] = arg.split(',').map(Number) as [number, number];
   return {
     latitude,
     longitude,

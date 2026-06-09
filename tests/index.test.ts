@@ -37,7 +37,7 @@ describe('e2e', () => {
         '--headless',
         '--isolated',
         '--executable-path',
-        executablePath(),
+        await executablePath(),
         ...extraArgs,
       ],
       env: {...process.env, BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
@@ -65,7 +65,7 @@ describe('e2e', () => {
         name: 'list_pages',
         arguments: {},
       });
-      t.assert.snapshot?.(JSON.stringify(result.content));
+      t.assert.snapshot(JSON.stringify(result.content));
     });
   });
 
@@ -79,7 +79,7 @@ describe('e2e', () => {
         name: 'list_pages',
         arguments: {},
       });
-      t.assert.snapshot?.(JSON.stringify(result.content));
+      t.assert.snapshot(JSON.stringify(result.content));
     });
   });
 
@@ -168,6 +168,19 @@ describe('e2e', () => {
         assert.ok(executeWebMcpTool);
       },
       ['--categoryExperimentalWebmcp'],
+    );
+  });
+
+  it('has memory debugging tools', async () => {
+    await withClient(
+      async client => {
+        const {tools} = await client.listTools();
+        const getHeapSnapshotSummary = tools.find(
+          t => t.name === 'get_heapsnapshot_summary',
+        );
+        assert.ok(getHeapSnapshotSummary);
+      },
+      ['--memoryDebugging'],
     );
   });
 
@@ -282,7 +295,7 @@ describe('e2e', () => {
     it('returns blocked message when dialog is opened during tool execution', async t => {
       await withClient(async client => {
         const result = await createNewPageAndTriggerDialog(client);
-        t.assert.snapshot?.(JSON.stringify(result));
+        t.assert.snapshot(JSON.stringify(result));
       });
     });
 
@@ -296,7 +309,7 @@ describe('e2e', () => {
           },
         });
 
-        t.assert.snapshot?.(JSON.stringify(result));
+        t.assert.snapshot(JSON.stringify(result));
       });
     });
 
@@ -310,7 +323,7 @@ describe('e2e', () => {
           },
         });
 
-        t.assert.snapshot?.(JSON.stringify(result));
+        t.assert.snapshot(JSON.stringify(result));
       });
     });
   });
