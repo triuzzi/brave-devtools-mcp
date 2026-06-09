@@ -77,14 +77,22 @@ export const listConsoleMessages = definePageTool(cliArgs => {
         .describe(
           'Set to true to return the preserved messages over the last 3 navigations.',
         ),
+      serviceWorkerId: zod
+        .string()
+        .optional()
+        .describe(
+          'Filter messages to only return messages of the specified service worker.',
+        ),
     },
     blockedByDialog: false,
+    verifyFilesSchema: [],
     handler: async (request, response) => {
       response.setIncludeConsoleData(true, {
         pageSize: request.params.pageSize,
         pageIdx: request.params.pageIdx,
         types: request.params.types,
         includePreservedMessages: request.params.includePreservedMessages,
+        serviceWorkerId: request.params.serviceWorkerId,
       });
     },
   };
@@ -105,6 +113,7 @@ export const getConsoleMessage = definePageTool({
       ),
   },
   blockedByDialog: false,
+  verifyFilesSchema: [],
   handler: async (request, response) => {
     response.attachConsoleMessage(request.params.msgid);
   },
