@@ -759,7 +759,7 @@ export class McpResponse implements Response {
     );
   }
 
-  format(
+  async format(
     toolName: string,
     context: McpContext,
     data: {
@@ -777,7 +777,10 @@ export class McpResponse implements Response {
       errorMessage?: string;
     },
     useToon: boolean,
-  ): {content: Array<TextContent | ImageContent>; structuredContent: object} {
+  ): Promise<{
+    content: Array<TextContent | ImageContent>;
+    structuredContent: object;
+  }> {
     const structuredContent: {
       snapshot?: object;
       snapshotFilePath?: string;
@@ -916,10 +919,14 @@ Call ${handleDialog.name} to handle it before continuing.`);
           const contextLabel = isolatedContextName
             ? ` isolatedContext=${isolatedContextName}`
             : '';
+          const title = await fetchPageTitle(page);
+          const pageLabel = title
+            ? `${truncateTitle(title)} (${page.url()})`
+            : page.url();
           parts.push(
-            `${context.getPageId(page)}: ${page.url()}${context.isPageSelected(page) ? ' [selected]' : ''}${contextLabel}`,
+            `${context.getPageId(page)}: ${pageLabel}${context.isPageSelected(page) ? ' [selected]' : ''}${contextLabel}`,
           );
-          structuredPages.push(createStructuredPage(page, context));
+          structuredPages.push(createStructuredPage(page, context, title));
         }
         response.push(...parts);
         structuredContent.pages = structuredPages;
@@ -934,10 +941,16 @@ Call ${handleDialog.name} to handle it before continuing.`);
             const contextLabel = isolatedContextName
               ? ` isolatedContext=${isolatedContextName}`
               : '';
+            const title = await fetchPageTitle(page);
+            const pageLabel = title
+              ? `${truncateTitle(title)} (${page.url()})`
+              : page.url();
             response.push(
-              `${context.getPageId(page)}: ${page.url()}${context.isPageSelected(page) ? ' [selected]' : ''}${contextLabel}`,
+              `${context.getPageId(page)}: ${pageLabel}${context.isPageSelected(page) ? ' [selected]' : ''}${contextLabel}`,
             );
-            structuredExtensionPages.push(createStructuredPage(page, context));
+            structuredExtensionPages.push(
+              createStructuredPage(page, context, title),
+            );
           }
           structuredContent.extensionPages = structuredExtensionPages;
         }
@@ -1301,16 +1314,37 @@ Call ${handleDialog.name} to handle it before continuing.`);
     this.#textResponseLines = [];
   }
 }
-function createStructuredPage(page: Page, context: McpContext) {
+function truncateTitle(title: string, maxLength = 50): string {
+  if (title.length <= maxLength) {
+    return title;
+  }
+  return title.slice(0, maxLength - 3) + '...';
+}
+
+async function fetchPageTitle(page: Page): Promise<string> {
+  return Promise.race([
+    page.title().catch(() => ''),
+    new Promise<string>(resolve => setTimeout(() => resolve(''), 1000)),
+  ]);
+}
+
+function createStructuredPage(
+  page: Page,
+  context: McpContext,
+  rawTitle: string,
+) {
   const isolatedContextName = context.getIsolatedContextName(page);
+  const title = truncateTitle(rawTitle);
   const entry: {
     id: number | undefined;
     url: string;
+    title: string;
     selected: boolean;
     isolatedContext?: string;
   } = {
     id: context.getPageId(page),
     url: page.url(),
+    title,
     selected: context.isPageSelected(page),
   };
   if (isolatedContextName) {
