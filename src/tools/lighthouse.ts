@@ -14,7 +14,6 @@ import {
   type Flags,
   type RunnerResult,
   type OutputMode,
-  agenticBrowsingConfig,
 } from '../third_party/index.js';
 
 import {ToolCategory} from './categories.js';
@@ -45,6 +44,7 @@ export const lighthouseAudit = definePageTool({
       .describe('Directory for reports. If omitted, uses temporary files.'),
   },
   blockedByDialog: true,
+  verifyFilesSchema: ['outputDirPath'],
   handler: async (request, response, context) => {
     const page = request.page;
     const categories = [
@@ -59,8 +59,6 @@ export const lighthouseAudit = definePageTool({
       device = 'desktop',
       outputDirPath,
     } = request.params;
-
-    context.validatePath(outputDirPath);
 
     const flags: Flags = {
       onlyCategories: categories,
@@ -89,17 +87,16 @@ export const lighthouseAudit = definePageTool({
       };
     }
 
-    const options: {flags: Flags; config?: object} = {
-      flags,
-      config: agenticBrowsingConfig,
-    };
-
     let result: RunnerResult | undefined;
     try {
       if (mode === 'navigation') {
-        result = await navigation(page.pptrPage, page.pptrPage.url(), options);
+        result = await navigation(page.pptrPage, page.pptrPage.url(), {
+          flags,
+        });
       } else {
-        result = await snapshot(page.pptrPage, options);
+        result = await snapshot(page.pptrPage, {
+          flags,
+        });
       }
 
       if (!result) {
@@ -113,7 +110,7 @@ export const lighthouseAudit = definePageTool({
     const reportPaths: string[] = [];
 
     const encoder = new TextEncoder();
-    for (const format of formats) {
+    const savePromises = formats.map(async format => {
       const report = generateReport(lhr, format);
       const data = encoder.encode(report);
       if (outputDirPath) {
@@ -123,14 +120,21 @@ export const lighthouseAudit = definePageTool({
           reportPath,
           `.${format}`,
         );
-        reportPaths.push(filename);
-      } else {
-        const {filepath} = await context.saveTemporaryFile(
-          data,
-          `report.${format}`,
-        );
-        reportPaths.push(filepath);
+        return filename;
       }
+      const {filepath} = await context.saveTemporaryFile(
+        data,
+        `report.${format}`,
+      );
+      return filepath;
+    });
+
+    const results = await Promise.allSettled(savePromises);
+    for (const res of results) {
+      if (res.status === 'rejected') {
+        throw res.reason;
+      }
+      reportPaths.push(res.value);
     }
 
     const categoryScores = Object.values(lhr.categories).map(c => ({

@@ -224,11 +224,13 @@
   },
   {
     "name": "experimental_memory",
-    "flagType": "boolean"
+    "flagType": "boolean",
+    "isDeprecated": true
   },
   {
     "name": "experimental_memory_present",
-    "flagType": "boolean"
+    "flagType": "boolean",
+    "isDeprecated": true
   },
   {
     "name": "experimental_navigation_allowlist",
@@ -283,6 +285,14 @@
     "isDeprecated": true
   },
   {
+    "name": "category_experimental_webmcp_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "category_experimental_webmcp",
+    "flagType": "boolean"
+  },
+  {
     "name": "category_experimental_third_party_present",
     "flagType": "boolean"
   },
@@ -291,11 +301,27 @@
     "flagType": "boolean"
   },
   {
-    "name": "category_experimental_webmcp_present",
+    "name": "memory_debugging_present",
     "flagType": "boolean"
   },
   {
-    "name": "category_experimental_webmcp",
+    "name": "memory_debugging",
+    "flagType": "boolean"
+  },
+  {
+    "name": "blocked_url_pattern_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "allowed_url_pattern_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "experimental_toon_format_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "experimental_toon_format",
     "flagType": "boolean"
   },
   {

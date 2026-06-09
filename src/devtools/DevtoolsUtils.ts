@@ -4,16 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {PuppeteerDevToolsConnection} from './DevToolsConnectionAdapter.js';
-import {Mutex} from './Mutex.js';
-import {DevTools} from './third_party/index.js';
+import {Mutex} from '../Mutex.js';
+import {DevTools} from '../third_party/index.js';
 import type {
   Browser,
+  CDPSession,
   ConsoleMessage,
   Page,
   Protocol,
   Target as PuppeteerTarget,
-} from './third_party/index.js';
+} from '../third_party/index.js';
+
+import {PuppeteerDevToolsConnection} from './DevToolsConnectionAdapter.js';
+import {McpHostBindingAdapter} from './McpHostBindingAdapter.js';
 
 /**
  * A mock implementation of an issues manager that only implements the methods
@@ -26,29 +29,107 @@ export class FakeIssuesManager extends DevTools.Common.ObjectWrapper
   }
 }
 
-// DevTools CDP errors can get noisy.
-DevTools.ProtocolClient.InspectorBackend.test.suppressRequestErrors = true;
+export function overrideDevToolsGlobals(): void {
+  DevTools.Host.InspectorFrontendHost.installInspectorFrontendHost(
+    new McpHostBindingAdapter(),
+  );
 
-DevTools.I18n.DevToolsLocale.DevToolsLocale.instance({
-  create: true,
-  data: {
-    navigatorLanguage: 'en-US',
-    settingLanguage: 'en-US',
-    lookupClosestDevToolsLocale: l => l,
-  },
-});
-DevTools.I18n.i18n.registerLocaleDataForTest('en-US', {});
+  // DevTools CDP errors can get noisy.
+  DevTools.ProtocolClient.InspectorBackend.test.suppressRequestErrors = true;
 
-DevTools.Formatter.FormatterWorkerPool.FormatterWorkerPool.instance({
-  forceNew: true,
-  entrypointURL: import.meta
-    .resolve('./third_party/devtools-formatter-worker.js'),
-});
+  // Stub out Network emulation commands on the DevTools Agent prototype globally.
+  // This prevents the DevTools Frontend from ever resetting/clearing Puppeteer's
+  // active network blocking/throttling rules during target setup or session lifetime.
+  const networkAgentPrototype =
+    DevTools.ProtocolClient.InspectorBackend.inspectorBackend.agentPrototypes.get(
+      'Network',
+    );
+  if (networkAgentPrototype) {
+    Object.defineProperty(
+      networkAgentPrototype,
+      'invoke_emulateNetworkConditionsByRule',
+      {
+        value: () => {
+          return Promise.resolve({
+            ruleIds: [],
+            getError: () => undefined,
+          });
+        },
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      },
+    );
+    Object.defineProperty(
+      networkAgentPrototype,
+      'invoke_overrideNetworkState',
+      {
+        value: () => {
+          return Promise.resolve({
+            getError: () => undefined,
+          });
+        },
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      },
+    );
+    Object.defineProperty(networkAgentPrototype, 'invoke_enable', {
+      value: () => {
+        return Promise.resolve({
+          getError: () => undefined,
+        });
+      },
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
+    Object.defineProperty(networkAgentPrototype, 'invoke_disable', {
+      value: () => {
+        return Promise.resolve({
+          getError: () => undefined,
+        });
+      },
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
+    Object.defineProperty(networkAgentPrototype, 'invoke_setBlockedURLs', {
+      value: () => {
+        return Promise.resolve({
+          getError: () => undefined,
+        });
+      },
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
+  }
+
+  DevTools.I18n.DevToolsLocale.DevToolsLocale.instance({
+    create: true,
+    data: {
+      navigatorLanguage: 'en-US',
+      settingLanguage: 'en-US',
+      lookupClosestDevToolsLocale: l => l,
+    },
+  });
+
+  DevTools.I18n.i18n.registerLocaleDataForTest('en-US', {});
+
+  DevTools.Formatter.FormatterWorkerPool.FormatterWorkerPool.instance({
+    forceNew: true,
+    entrypointURL: import.meta
+      .resolve('../third_party/devtools-formatter-worker.js'),
+  });
+}
 
 export interface TargetUniverse {
   /** The DevTools target corresponding to the puppeteer Page */
   target: DevTools.Target;
   universe: DevTools.Foundation.Universe.Universe;
+  /** The secondary session created for this page */
+  session: CDPSession;
 }
 export type TargetUniverseFactoryFn = (page: Page) => Promise<TargetUniverse>;
 
@@ -143,7 +224,12 @@ const DEFAULT_FACTORY: TargetUniverseFactoryFn = async (page: Page) => {
   const connection = new PuppeteerDevToolsConnection(session);
 
   const targetManager = universe.context.get(DevTools.TargetManager);
+
   targetManager.observeModels(DevTools.DebuggerModel, SKIP_ALL_PAUSES);
+  targetManager.observeModels(
+    DevTools.NetworkManager.NetworkManager,
+    DISABLE_NETWORK,
+  );
 
   const target = targetManager.createTarget(
     'main',
@@ -154,7 +240,7 @@ const DEFAULT_FACTORY: TargetUniverseFactoryFn = async (page: Page) => {
     undefined,
     connection,
   );
-  return {target, universe};
+  return {target, universe, session};
 };
 
 // We don't want to pause any DevTools universe session ever on the MCP side.
@@ -165,6 +251,20 @@ const DEFAULT_FACTORY: TargetUniverseFactoryFn = async (page: Page) => {
 const SKIP_ALL_PAUSES = {
   modelAdded(model: DevTools.DebuggerModel): void {
     void model.agent.invoke_setSkipAllPauses({skip: true});
+  },
+
+  modelRemoved(): void {
+    // Do nothing.
+  },
+};
+
+// Not recording network requests in the DevTools universe.
+//
+// The network requests are collected through pptr and there isn't a use case for
+// enabling devtools SDK's network domain.
+const DISABLE_NETWORK = {
+  modelAdded(model: DevTools.NetworkManager.NetworkManager): void {
+    void model.target().networkAgent().invoke_disable();
   },
 
   modelRemoved(): void {

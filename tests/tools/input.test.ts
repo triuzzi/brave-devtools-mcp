@@ -25,7 +25,7 @@ import {
 } from '../../src/tools/input.js';
 import {parseKey} from '../../src/utils/keyboard.js';
 import {serverHooks} from '../server.js';
-import {html, withMcpContext} from '../utils.js';
+import {html, withMcpContext, getTextContent} from '../utils.js';
 
 describe('input', () => {
   const server = serverHooks();
@@ -127,6 +127,67 @@ describe('input', () => {
         ]);
 
         assert(t1 > t2, 'Waited for navigation');
+      });
+    });
+
+    it('reports the new URL when click triggers a navigation', async () => {
+      server.addHtmlRoute(
+        '/start',
+        html`<a href="/after-click">Navigate page</a>`,
+      );
+      server.addHtmlRoute('/after-click', html`<main>arrived</main>`);
+
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+        await page.goto(server.getRoute('/start'));
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+        await click.handler(
+          {
+            params: {
+              uid: '1_2',
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+        const result = await response.handle('click', context);
+        const textContent = getTextContent(result.content[0]);
+        const expectedUrl = server.getRoute('/after-click');
+        assert.ok(
+          textContent.includes(`Page navigated to ${expectedUrl}.`),
+          `Expected response to mention navigation to ${expectedUrl}, got: ${textContent}`,
+        );
+      });
+    });
+
+    it('does not report navigation when click does not navigate', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+        await page.setContent(
+          html`<button onclick="this.innerText = 'clicked';">test</button>`,
+        );
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+        await click.handler(
+          {
+            params: {
+              uid: '1_1',
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+        const result = await response.handle('click', context);
+        const textContent = getTextContent(result.content[0]);
+        assert.ok(
+          !textContent.includes('Page navigated to '),
+          `Did not expect a navigation line, got: ${textContent}`,
+        );
       });
     });
 
@@ -709,7 +770,7 @@ describe('input', () => {
         await fill.handler(
           {
             params: {
-              uid: '1_1', // email input
+              uid: '1_2', // email input
               value: 'new@test.com',
             },
             page: context.getSelectedMcpPage(),
@@ -727,7 +788,7 @@ describe('input', () => {
         await fill.handler(
           {
             params: {
-              uid: '1_2', // password input
+              uid: '1_3', // password input
               value: 'secret',
             },
             page: context.getSelectedMcpPage(),
@@ -759,6 +820,180 @@ describe('input', () => {
           'secret',
           'Password should be updated correctly',
         );
+      });
+    });
+
+    it('toggles checkboxes', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+        await page.setContent(
+          html`<input
+            type="checkbox"
+            id="cb"
+          />`,
+        );
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+
+        // Check it
+        await fill.handler(
+          {
+            params: {
+              uid: '1_1',
+              value: 'true',
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+
+        assert.strictEqual(
+          response.responseLines[0],
+          'Successfully filled out the element',
+        );
+        assert.ok(response.includeSnapshot);
+        let isChecked = await page.$eval(
+          '#cb',
+          el => (el as HTMLInputElement).checked,
+        );
+        assert.strictEqual(isChecked, true);
+
+        // Uncheck it
+        await fill.handler(
+          {
+            params: {
+              uid: '1_1',
+              value: 'false',
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          new McpResponse({} as ParsedArguments),
+          context,
+        );
+
+        isChecked = await page.$eval(
+          '#cb',
+          el => (el as HTMLInputElement).checked,
+        );
+        assert.strictEqual(isChecked, false);
+      });
+    });
+
+    it('toggles switches', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+        await page.setContent(html`
+          <div
+            role="switch"
+            aria-checked="false"
+            id="sw"
+            style="width: 20px; height: 20px; background: blue;"
+            onclick="this.setAttribute('aria-checked', this.getAttribute('aria-checked') === 'true' ? 'false' : 'true')"
+          >
+            switch
+          </div>
+        `);
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+
+        // Turn it on
+        await fill.handler(
+          {
+            params: {
+              uid: '1_1',
+              value: 'true',
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+
+        let swChecked = await page.$eval(
+          '#sw',
+          el => el.getAttribute('aria-checked') === 'true',
+        );
+        assert.strictEqual(swChecked, true);
+
+        // Turn it off
+        await fill.handler(
+          {
+            params: {
+              uid: '1_1',
+              value: 'false',
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          new McpResponse({} as ParsedArguments),
+          context,
+        );
+
+        swChecked = await page.$eval(
+          '#sw',
+          el => el.getAttribute('aria-checked') === 'true',
+        );
+        assert.strictEqual(swChecked, false);
+      });
+    });
+
+    it('selects radio buttons', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+        await page.setContent(html`
+          <input
+            type="radio"
+            name="group1"
+            id="r1"
+            checked
+          />
+          <input
+            type="radio"
+            name="group1"
+            id="r2"
+          />
+        `);
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+
+        // Initial state
+        let r1Checked = await page.$eval(
+          '#r1',
+          el => (el as HTMLInputElement).checked,
+        );
+        let r2Checked = await page.$eval(
+          '#r2',
+          el => (el as HTMLInputElement).checked,
+        );
+        assert.strictEqual(r1Checked, true);
+        assert.strictEqual(r2Checked, false);
+
+        // Fill second radio with true
+        await fill.handler(
+          {
+            params: {
+              uid: '1_2',
+              value: 'true',
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+
+        r1Checked = await page.$eval(
+          '#r1',
+          el => (el as HTMLInputElement).checked,
+        );
+        r2Checked = await page.$eval(
+          '#r2',
+          el => (el as HTMLInputElement).checked,
+        );
+        assert.strictEqual(r1Checked, false);
+        assert.strictEqual(r2Checked, true);
       });
     });
   });
@@ -850,11 +1085,11 @@ describe('input', () => {
             params: {
               elements: [
                 {
-                  uid: '1_2',
+                  uid: '1_3',
                   value: 'test',
                 },
                 {
-                  uid: '1_4',
+                  uid: '1_5',
                   value: 'test2',
                 },
               ],
@@ -882,6 +1117,57 @@ describe('input', () => {
         );
       });
     });
+
+    it('fill_form handles checkboxes', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+        await page.setContent(
+          html`<input
+              name="username"
+              type="text"
+            /><input
+              name="cb"
+              type="checkbox"
+            />`,
+        );
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
+        await fillForm.handler(
+          {
+            params: {
+              elements: [
+                {
+                  uid: '1_1',
+                  value: 'test',
+                },
+                {
+                  uid: '1_2',
+                  value: 'true',
+                },
+              ],
+            },
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+        assert.strictEqual(
+          await page.evaluate(() => {
+            // @ts-expect-error missing types
+            return document.querySelector('input[name=username]').value;
+          }),
+          'test',
+        );
+        assert.strictEqual(
+          await page.evaluate(() => {
+            // @ts-expect-error missing types
+            return document.querySelector('input[name=cb]').checked;
+          }),
+          true,
+        );
+      });
+    });
   });
 
   describe('uploadFile', () => {
@@ -905,7 +1191,7 @@ describe('input', () => {
         await uploadFile.handler(
           {
             params: {
-              uid: '1_1',
+              uid: '1_2',
               filePath: testFilePath,
             },
             page: context.getSelectedMcpPage(),
