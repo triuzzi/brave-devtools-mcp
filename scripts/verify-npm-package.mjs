@@ -5,6 +5,11 @@
  */
 
 import {execSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
+
+// Resolve the published package name from package.json so this keeps working
+// across the Brave fork rename (this was hardcoded to 'chrome-devtools-mcp').
+const packageName = JSON.parse(readFileSync('package.json', 'utf8')).name;
 
 // Checks that the select build files are present using `npm publish --dry-run`.
 function verifyPackageContents() {
@@ -14,7 +19,7 @@ function verifyPackageContents() {
     });
     // skip non-JSON output from prepare.
     const data = JSON.parse(output.substring(output.indexOf('{')));
-    const files = data['chrome-devtools-mcp'].files.map(f => f.path);
+    const files = data[packageName].files.map(f => f.path);
     // Check some important files.
     const requiredPaths = [
       'build/src/index.js',
