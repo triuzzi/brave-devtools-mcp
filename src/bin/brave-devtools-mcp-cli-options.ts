@@ -205,7 +205,7 @@ export const cliOptions = {
   categoryExperimentalWebmcp: {
     type: 'boolean',
     describe:
-      'Set to true to enable debugging WebMCP tools. Requires Brave with the following flags: `--enable-features=WebMCPTesting,DevToolsWebMCPSupport`',
+      'Set to true to enable debugging WebMCP tools. Requires Brave with the following flags: `--enable-features=WebMCP,DevToolsWebMCPSupport`',
   },
   braveArg: {
     type: 'array',

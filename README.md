@@ -751,7 +751,7 @@ The Brave DevTools MCP server supports the following configuration options:
   - **Type:** string
 
 - **`--categoryExperimentalWebmcp`/ `--category-experimental-webmcp`**
-  Set to true to enable debugging WebMCP tools. Requires Brave with the following flags: `--enable-features=WebMCPTesting,DevToolsWebMCPSupport`
+  Set to true to enable debugging WebMCP tools. Requires Brave with the following flags: `--enable-features=WebMCP,DevToolsWebMCPSupport`
   - **Type:** boolean
 
 - **`--braveArg`/ `--brave-arg`**
