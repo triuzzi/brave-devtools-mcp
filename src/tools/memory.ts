@@ -223,3 +223,60 @@ export const getHeapSnapshotRetainingPaths = defineTool({
     response.setHeapSnapshotRetainingPaths(retainingPaths);
   },
 });
+
+export const getHeapSnapshotEdges = defineTool({
+  name: 'get_heapsnapshot_edges',
+  description:
+    'Loads a memory heapsnapshot and returns outgoing edges (references) for a specific node ID.',
+  annotations: {
+    category: ToolCategory.MEMORY,
+    readOnlyHint: true,
+    conditions: ['memoryDebugging'],
+  },
+  blockedByDialog: false,
+  verifyFilesSchema: ['filePath'],
+  schema: {
+    filePath: zod.string().describe('A path to a .heapsnapshot file to read.'),
+    nodeId: zod.number().describe('The node ID to get outgoing edges for.'),
+    pageIdx: zod.number().optional().describe('The page index for pagination.'),
+    pageSize: zod.number().optional().describe('The page size for pagination.'),
+  },
+  handler: async (request, response, context) => {
+    const edges = await context.getHeapSnapshotEdges(
+      request.params.filePath,
+      request.params.nodeId,
+    );
+
+    response.setHeapSnapshotNodes(edges, {
+      pageIdx: request.params.pageIdx,
+      pageSize: request.params.pageSize,
+    });
+  },
+});
+
+export const getHeapSnapshotDominators = defineTool({
+  name: 'get_heapsnapshot_dominators',
+  description:
+    'Loads a memory heapsnapshot and returns the dominator chain for a specific node ID. This helps to identify which objects are keeping the target node alive.',
+  annotations: {
+    category: ToolCategory.MEMORY,
+    readOnlyHint: true,
+    conditions: ['memoryDebugging'],
+  },
+  blockedByDialog: false,
+  verifyFilesSchema: ['filePath'],
+  schema: {
+    filePath: zod.string().describe('A path to a .heapsnapshot file to read.'),
+    nodeId: zod
+      .number()
+      .describe('The node ID to get the dominator chain for.'),
+  },
+  handler: async (request, response, context) => {
+    const dominators = await context.getHeapSnapshotDominators(
+      request.params.filePath,
+      request.params.nodeId,
+    );
+
+    response.setHeapSnapshotDominators(dominators);
+  },
+});

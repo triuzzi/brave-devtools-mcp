@@ -331,5 +331,31 @@
   {
     "name": "ignore_default_brave_arg_present",
     "flagType": "boolean"
+  },
+  {
+    "name": "screenshot_format_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "screenshot_format",
+    "flagType": "enum",
+    "choices": [
+      "SCREENSHOT_FORMAT_UNSPECIFIED",
+      "SCREENSHOT_FORMAT_JPEG",
+      "SCREENSHOT_FORMAT_PNG",
+      "SCREENSHOT_FORMAT_WEBP"
+    ]
+  },
+  {
+    "name": "screenshot_quality_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "screenshot_max_width_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "screenshot_max_height_present",
+    "flagType": "boolean"
   }
 ]
