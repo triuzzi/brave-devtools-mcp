@@ -16,6 +16,7 @@ import type {
 } from '../third_party/index.js';
 
 import {PuppeteerDevToolsConnection} from './DevToolsConnectionAdapter.js';
+import {McpHostBindingAdapter} from './McpHostBindingAdapter.js';
 
 /**
  * A mock implementation of an issues manager that only implements the methods
@@ -28,10 +29,14 @@ export class FakeIssuesManager extends DevTools.Common.ObjectWrapper
   }
 }
 
-export function overrideDevToolsGlobals(): void {
-  // Host bindings are installed by upstream's mcp/mcp.js at import time
-  // (installInspectorFrontendHost(new McpHostBindings())). Since v1.2.0 the
-  // bundle self-installs them and no longer exports DevTools.Host for callers.
+export function overrideDevToolsGlobals({
+  loadResource,
+}: {
+  loadResource: (url: string) => Promise<string>;
+}): void {
+  DevTools.Host.InspectorFrontendHost.installInspectorFrontendHost(
+    new McpHostBindingAdapter(loadResource),
+  );
 
   // DevTools CDP errors can get noisy.
   DevTools.ProtocolClient.InspectorBackend.test.suppressRequestErrors = true;

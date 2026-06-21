@@ -632,11 +632,13 @@ If you run into any issues, checkout our [troubleshooting guide](./docs/troubles
   - [`take_snapshot`](docs/tool-reference.md#take_snapshot)
   - [`screencast_start`](docs/tool-reference.md#screencast_start)
   - [`screencast_stop`](docs/tool-reference.md#screencast_stop)
-- **Memory** (7 tools)
+- **Memory** (9 tools)
   - [`take_heapsnapshot`](docs/tool-reference.md#take_heapsnapshot)
   - [`close_heapsnapshot`](docs/tool-reference.md#close_heapsnapshot)
   - [`get_heapsnapshot_class_nodes`](docs/tool-reference.md#get_heapsnapshot_class_nodes)
   - [`get_heapsnapshot_details`](docs/tool-reference.md#get_heapsnapshot_details)
+  - [`get_heapsnapshot_dominators`](docs/tool-reference.md#get_heapsnapshot_dominators)
+  - [`get_heapsnapshot_edges`](docs/tool-reference.md#get_heapsnapshot_edges)
   - [`get_heapsnapshot_retainers`](docs/tool-reference.md#get_heapsnapshot_retainers)
   - [`get_heapsnapshot_retaining_paths`](docs/tool-reference.md#get_heapsnapshot_retaining_paths)
   - [`get_heapsnapshot_summary`](docs/tool-reference.md#get_heapsnapshot_summary)
@@ -749,7 +751,7 @@ The Brave DevTools MCP server supports the following configuration options:
   - **Type:** string
 
 - **`--categoryExperimentalWebmcp`/ `--category-experimental-webmcp`**
-  Set to true to enable debugging WebMCP tools. Requires Brave with the following flags: `--enable-features=WebMCPTesting,DevToolsWebMCPSupport`
+  Set to true to enable debugging WebMCP tools. Requires Brave with the following flags: `--enable-features=WebMCP,DevToolsWebMCPSupport`
   - **Type:** boolean
 
 - **`--braveArg`/ `--brave-arg`**
@@ -802,6 +804,23 @@ The Brave DevTools MCP server supports the following configuration options:
   Usage statistics collection (disabled by default in this fork).
   - **Type:** boolean
   - **Default:** `false`
+
+- **`--screenshotFormat`/ `--screenshot-format`**
+  Override the default output format used by take_screenshot when the caller does not specify one. JPEG and WebP are ~3-5x smaller than PNG, which helps reduce context size in AI conversations. Unset preserves the existing default ("png").
+  - **Type:** string
+  - **Choices:** `jpeg`, `png`, `webp`
+
+- **`--screenshotQuality`/ `--screenshot-quality`**
+  Override the default compression quality (0-100) used by take_screenshot for JPEG and WebP when the caller does not specify one. Lower values mean smaller files. Ignored for PNG. Unset preserves the Puppeteer default.
+  - **Type:** number
+
+- **`--screenshotMaxWidth`/ `--screenshot-max-width`**
+  Maximum width in pixels for screenshots. If the captured image is wider, it is downscaled (preserving aspect ratio) before being returned. Reduces context size in AI conversations. Unset means no resize.
+  - **Type:** number
+
+- **`--screenshotMaxHeight`/ `--screenshot-max-height`**
+  Maximum height in pixels for screenshots. If the captured image is taller, it is downscaled (preserving aspect ratio) before being returned. Can be combined with --screenshot-max-width; the smaller scale factor wins. Unset means no resize.
+  - **Type:** number
 
 - **`--slim`**
   Exposes a "slim" set of 3 tools covering navigation, script execution and screenshots only. Useful for basic browser tasks.

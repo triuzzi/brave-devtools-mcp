@@ -113,6 +113,9 @@ async function getToolGroups(page: McpPage): Promise<ToolGroups> {
   }
 
   const toolGroups = await page.pptrPage.evaluate(() => {
+    if (window.__dtmcp) {
+      window.__dtmcp.toolGroups = [];
+    }
     return new Promise<ToolGroups>(resolve => {
       const event = new CustomEvent('devtoolstooldiscovery');
       const groups: ToolGroups = [];
@@ -127,7 +130,8 @@ async function getToolGroups(page: McpPage): Promise<ToolGroups> {
 
         if (
           typeof toolGroup.name !== 'string' ||
-          typeof toolGroup.description !== 'string' ||
+          (toolGroup.description &&
+            typeof toolGroup.description !== 'string') ||
           !Array.isArray(toolGroup.tools)
         ) {
           console.error('Invalid toolGroup:', toolGroup);
@@ -220,6 +224,7 @@ export class McpResponse implements Response {
     staticData?: DevTools.HeapSnapshotModel.HeapSnapshotModel.StaticData | null;
     nodes?: DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange;
     retainingPaths?: DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainingPaths;
+    dominators?: DevTools.HeapSnapshotModel.HeapSnapshotModel.DominatorChain;
   };
   #networkRequestsOptions?: {
     include: boolean;
@@ -483,6 +488,16 @@ export class McpResponse implements Response {
       ...this.#heapSnapshotOptions,
       include: true,
       retainingPaths,
+    };
+  }
+
+  setHeapSnapshotDominators(
+    dominators: DevTools.HeapSnapshotModel.HeapSnapshotModel.DominatorChain,
+  ) {
+    this.#heapSnapshotOptions = {
+      ...this.#heapSnapshotOptions,
+      include: true,
+      dominators,
     };
   }
 
@@ -759,7 +774,7 @@ export class McpResponse implements Response {
     );
   }
 
-  format(
+  async format(
     toolName: string,
     context: McpContext,
     data: {
@@ -777,7 +792,10 @@ export class McpResponse implements Response {
       errorMessage?: string;
     },
     useToon: boolean,
-  ): {content: Array<TextContent | ImageContent>; structuredContent: object} {
+  ): Promise<{
+    content: Array<TextContent | ImageContent>;
+    structuredContent: object;
+  }> {
     const structuredContent: {
       snapshot?: object;
       snapshotFilePath?: string;
@@ -813,6 +831,7 @@ export class McpResponse implements Response {
       heapSnapshotData?: object[];
       heapSnapshotNodes?: readonly object[];
       heapSnapshotRetainingPaths?: object;
+      heapSnapshotDominators?: readonly object[];
       extensionServiceWorkers?: object[];
       extensionPages?: object[];
       errorMessage?: string;
@@ -916,10 +935,14 @@ Call ${handleDialog.name} to handle it before continuing.`);
           const contextLabel = isolatedContextName
             ? ` isolatedContext=${isolatedContextName}`
             : '';
+          const title = await fetchPageTitle(page);
+          const pageLabel = title
+            ? `${truncateTitle(title)} (${page.url()})`
+            : page.url();
           parts.push(
-            `${context.getPageId(page)}: ${page.url()}${context.isPageSelected(page) ? ' [selected]' : ''}${contextLabel}`,
+            `${context.getPageId(page)}: ${pageLabel}${context.isPageSelected(page) ? ' [selected]' : ''}${contextLabel}`,
           );
-          structuredPages.push(createStructuredPage(page, context));
+          structuredPages.push(createStructuredPage(page, context, title));
         }
         response.push(...parts);
         structuredContent.pages = structuredPages;
@@ -934,10 +957,16 @@ Call ${handleDialog.name} to handle it before continuing.`);
             const contextLabel = isolatedContextName
               ? ` isolatedContext=${isolatedContextName}`
               : '';
+            const title = await fetchPageTitle(page);
+            const pageLabel = title
+              ? `${truncateTitle(title)} (${page.url()})`
+              : page.url();
             response.push(
-              `${context.getPageId(page)}: ${page.url()}${context.isPageSelected(page) ? ' [selected]' : ''}${contextLabel}`,
+              `${context.getPageId(page)}: ${pageLabel}${context.isPageSelected(page) ? ' [selected]' : ''}${contextLabel}`,
             );
-            structuredExtensionPages.push(createStructuredPage(page, context));
+            structuredExtensionPages.push(
+              createStructuredPage(page, context, title),
+            );
           }
           structuredContent.extensionPages = structuredExtensionPages;
         }
@@ -1116,6 +1145,16 @@ Call ${handleDialog.name} to handle it before continuing.`);
         }
         structuredContent.heapSnapshotRetainingPaths =
           retainingPaths as unknown as object;
+      }
+      const dominators = this.#heapSnapshotOptions.dominators;
+      if (dominators) {
+        response.push('### Dominator Chain');
+        if (dominators.length === 0) {
+          response.push('No dominators found.');
+        } else {
+          response.push(HeapSnapshotFormatter.formatDominators(dominators));
+        }
+        structuredContent.heapSnapshotDominators = dominators;
       }
     }
 
@@ -1301,16 +1340,37 @@ Call ${handleDialog.name} to handle it before continuing.`);
     this.#textResponseLines = [];
   }
 }
-function createStructuredPage(page: Page, context: McpContext) {
+function truncateTitle(title: string, maxLength = 50): string {
+  if (title.length <= maxLength) {
+    return title;
+  }
+  return title.slice(0, maxLength - 3) + '...';
+}
+
+async function fetchPageTitle(page: Page): Promise<string> {
+  return Promise.race([
+    page.title().catch(() => ''),
+    new Promise<string>(resolve => setTimeout(() => resolve(''), 1000)),
+  ]);
+}
+
+function createStructuredPage(
+  page: Page,
+  context: McpContext,
+  rawTitle: string,
+) {
   const isolatedContextName = context.getIsolatedContextName(page);
+  const title = truncateTitle(rawTitle);
   const entry: {
     id: number | undefined;
     url: string;
+    title: string;
     selected: boolean;
     isolatedContext?: string;
   } = {
     id: context.getPageId(page),
     url: page.url(),
+    title,
     selected: context.isPageSelected(page),
   };
   if (isolatedContextName) {
