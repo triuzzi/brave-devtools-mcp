@@ -16,7 +16,12 @@ import {
   UniverseManager,
 } from './devtools/DevtoolsUtils.js';
 import {HeapSnapshotManager} from './HeapSnapshotManager.js';
-import type {AggregatedInfoWithId} from './HeapSnapshotManager.js';
+import type {
+  AggregatedInfoWithId,
+  HeapSnapshotClassDiff,
+  HeapSnapshotDetailedClassDiff,
+  DuplicateStringGroup,
+} from './HeapSnapshotManager.js';
 import {McpPage} from './McpPage.js';
 import {
   NetworkCollector,
@@ -50,11 +55,7 @@ import type {
   GeolocationOptions,
   ExtensionServiceWorker,
 } from './types.js';
-import {
-  ensureExtension,
-  getTempFilePath,
-  resolveCanonicalPath,
-} from './utils/files.js';
+import {getTempFilePath, resolveCanonicalPath} from './utils/files.js';
 import {getNetworkMultiplierFromString} from './WaitForHelper.js';
 
 interface McpContextOptions {
@@ -64,8 +65,10 @@ interface McpContextOptions {
   experimentalIncludeAllPages?: boolean;
   // Whether CrUX data should be fetched.
   performanceCrux: boolean;
-  // Whether allowlist/blocklist is configured.
-  hasNetworkBlockOrAllowlist?: boolean;
+  // The allow list of URL patterns to allow loading resources.
+  allowList?: string[];
+  // The block list of URL patterns to block loading resources.
+  blocklist?: string[];
 }
 
 const DEFAULT_TIMEOUT = 5_000;
@@ -252,6 +255,20 @@ export class McpContext implements Context {
     }
   }
 
+  async ensureExtension<Extension extends `.${string}`>(
+    filePath: string,
+    extension: Extension,
+  ): Promise<`${string}${Extension}`> {
+    const resolvedPath = path.resolve(filePath);
+    const currentExtension = path.extname(resolvedPath);
+    const outputPath: `${string}${Extension}` = `${resolvedPath.slice(
+      0,
+      resolvedPath.length - currentExtension.length,
+    )}${extension}`;
+    await this.validatePath(outputPath);
+    return outputPath;
+  }
+
   resolveCdpRequestId(page: McpPage, cdpRequestId: string): number | undefined {
     if (!cdpRequestId) {
       this.logger?.('no network request');
@@ -347,6 +364,10 @@ export class McpContext implements Context {
     await this.emulate(currentSetting, page.pptrPage);
   }
 
+  get #hasNetworkBlockOrAllowlist(): boolean {
+    return !!(this.#options.allowList || this.#options.blocklist);
+  }
+
   async emulate(
     options: {
       networkConditions?: string;
@@ -364,7 +385,7 @@ export class McpContext implements Context {
     const newSettings: EmulationSettings = {...mcpPage.emulationSettings};
 
     // Skip network emulation if blocklist/allowlist is configured, as it conflicts with blocking rules in Puppeteer.
-    if (this.#options.hasNetworkBlockOrAllowlist) {
+    if (this.#hasNetworkBlockOrAllowlist) {
       if (options.networkConditions !== undefined) {
         throw new Error(
           'Network throttling is not supported when network blocking (allowlist/blocklist) is configured.',
@@ -790,12 +811,11 @@ export class McpContext implements Context {
     clientProvidedFilePath: string,
     extension: SupportedExtensions,
   ): Promise<{filename: string}> {
-    await this.validatePath(clientProvidedFilePath);
+    const filePath = await this.ensureExtension(
+      clientProvidedFilePath,
+      extension,
+    );
     try {
-      const filePath = ensureExtension(
-        path.resolve(clientProvidedFilePath),
-        extension,
-      );
       await fs.mkdir(path.dirname(filePath), {recursive: true});
       await fs.writeFile(filePath, data);
       return {filename: filePath};
@@ -895,6 +915,12 @@ export class McpContext implements Context {
     return await this.#heapSnapshotManager.getAggregates(filePath);
   }
 
+  async getHeapSnapshotDuplicateStrings(
+    filePath: string,
+  ): Promise<DuplicateStringGroup[]> {
+    return await this.#heapSnapshotManager.getDuplicateStrings(filePath);
+  }
+
   async getHeapSnapshotStats(
     filePath: string,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.Statistics> {
@@ -952,13 +978,41 @@ export class McpContext implements Context {
     return await this.#heapSnapshotManager.getDominatorsOf(filePath, nodeId);
   }
 
+  #validateUrlNotBlocked(url: URL): void {
+    if (!this.#options.blocklist) {
+      return;
+    }
+    for (const block of this.#options.blocklist) {
+      const pattern = new URLPattern(block);
+      if (pattern.test(url)) {
+        throw new Error(`Blocked by blocklist: ${url}`);
+      }
+    }
+  }
+
+  #validateUrlAllowed(url: URL): void {
+    if (!this.#options.allowList) {
+      return;
+    }
+    for (const allow of this.#options.allowList) {
+      const pattern = new URLPattern(allow);
+      if (pattern.test(url)) {
+        return;
+      }
+    }
+    throw new Error(`Not allowed by allowlist: ${url}`);
+  }
+
   async loadResource(path: string): Promise<string> {
     const url = new URL(path);
+
+    this.#validateUrlNotBlocked(url);
 
     switch (url.protocol) {
       case 'https:':
       case 'http:': {
-        // TODO: Verify allow/block list
+        this.#validateUrlAllowed(url);
+
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`Failed to load resource: ${url}`);
@@ -981,5 +1035,27 @@ export class McpContext implements Context {
     nodeId: number,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange> {
     return await this.#heapSnapshotManager.getEdges(filePath, nodeId);
+  }
+
+  async getHeapSnapshotClassDiffs(
+    baseFilePath: string,
+    currentFilePath: string,
+  ): Promise<HeapSnapshotClassDiff[]> {
+    return await this.#heapSnapshotManager.getClassDiffs(
+      baseFilePath,
+      currentFilePath,
+    );
+  }
+
+  async getHeapSnapshotDetailedClassDiff(
+    baseFilePath: string,
+    currentFilePath: string,
+    classIndex: number,
+  ): Promise<HeapSnapshotDetailedClassDiff> {
+    return await this.#heapSnapshotManager.getDetailedClassDiff(
+      baseFilePath,
+      currentFilePath,
+      classIndex,
+    );
   }
 }

@@ -8,16 +8,24 @@ import type {WebMCPTool} from 'puppeteer-core';
 
 import type {ParsedArguments} from './bin/brave-devtools-mcp-cli-options.js';
 import {ConsoleFormatter} from './formatters/ConsoleFormatter.js';
-import {HeapSnapshotFormatter} from './formatters/HeapSnapshotFormatter.js';
-import {isEdgeLike, isNodeLike} from './formatters/HeapSnapshotFormatter.js';
+import {
+  HeapSnapshotFormatter,
+  isEdgeLike,
+  isNodeLike,
+} from './formatters/HeapSnapshotFormatter.js';
 import {IssueFormatter} from './formatters/IssueFormatter.js';
 import {NetworkFormatter} from './formatters/NetworkFormatter.js';
 import {SnapshotFormatter} from './formatters/SnapshotFormatter.js';
+import type {
+  HeapSnapshotClassDiff,
+  HeapSnapshotDetailedClassDiff,
+  DuplicateStringGroup,
+} from './HeapSnapshotManager.js';
 import type {McpContext} from './McpContext.js';
 import type {McpPage} from './McpPage.js';
 import {UncaughtError} from './PageCollector.js';
 import {TextSnapshot} from './TextSnapshot.js';
-import {DevTools, toonEncode, type Protocol} from './third_party/index.js';
+import {DevTools, getToonEncode, type Protocol} from './third_party/index.js';
 import type {
   ConsoleMessage,
   ImageContent,
@@ -225,6 +233,9 @@ export class McpResponse implements Response {
     nodes?: DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange;
     retainingPaths?: DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainingPaths;
     dominators?: DevTools.HeapSnapshotModel.HeapSnapshotModel.DominatorChain;
+    classDiffs?: HeapSnapshotClassDiff[];
+    detailedClassDiff?: HeapSnapshotDetailedClassDiff;
+    duplicateStrings?: DuplicateStringGroup[];
   };
   #networkRequestsOptions?: {
     include: boolean;
@@ -481,6 +492,18 @@ export class McpResponse implements Response {
     };
   }
 
+  setHeapSnapshotDuplicateStrings(
+    duplicateStrings: DuplicateStringGroup[],
+    options?: PaginationOptions,
+  ) {
+    this.#heapSnapshotOptions = {
+      ...this.#heapSnapshotOptions,
+      include: true,
+      duplicateStrings,
+      pagination: options,
+    };
+  }
+
   setHeapSnapshotRetainingPaths(
     retainingPaths: DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainingPaths,
   ) {
@@ -498,6 +521,24 @@ export class McpResponse implements Response {
       ...this.#heapSnapshotOptions,
       include: true,
       dominators,
+    };
+  }
+
+  setHeapSnapshotClassDiffs(classDiffs: HeapSnapshotClassDiff[]) {
+    this.#heapSnapshotOptions = {
+      ...this.#heapSnapshotOptions,
+      include: true,
+      classDiffs,
+    };
+  }
+
+  setHeapSnapshotDetailedClassDiff(
+    detailedClassDiff: HeapSnapshotDetailedClassDiff,
+  ) {
+    this.#heapSnapshotOptions = {
+      ...this.#heapSnapshotOptions,
+      include: true,
+      detailedClassDiff,
     };
   }
 
@@ -832,12 +873,29 @@ export class McpResponse implements Response {
       heapSnapshotNodes?: readonly object[];
       heapSnapshotRetainingPaths?: object;
       heapSnapshotDominators?: readonly object[];
+      heapSnapshotClassDiffs?: HeapSnapshotClassDiff[];
+      heapSnapshotDetailedClassDiff?: HeapSnapshotDetailedClassDiff;
+      heapSnapshotDuplicateStrings?: readonly DuplicateStringGroup[];
       extensionServiceWorkers?: object[];
       extensionPages?: object[];
       errorMessage?: string;
       navigatedToUrl?: string;
       geolocation?: {latitude: number; longitude: number};
     } = {};
+
+    let toonEncode: ((val: unknown) => string) | undefined;
+    if (useToon) {
+      try {
+        toonEncode = await getToonEncode();
+      } catch {
+        throw new Error(
+          'The `@toon-format/toon` package is required to use the experimental TOON format. ' +
+            'Make sure the peer dependency is installed:\n' +
+            '- For npx: npx --package chrome-devtools-mcp@latest --package @toon-format/toon@latest chrome-devtools-mcp --experimentalToonFormat\n' +
+            '- For npm: npm install @toon-format/toon (add -g if installed globally)',
+        );
+      }
+    }
 
     const response = [];
     if (this.#textResponseLines.length) {
@@ -1057,7 +1115,7 @@ Call ${handleDialog.name} to handle it before continuing.`);
         structuredContent.snapshot = data.snapshot.toJSON();
         response.push('## Latest page snapshot');
         response.push(
-          useToon
+          useToon && toonEncode
             ? toonEncode(structuredContent.snapshot)
             : data.snapshot.toString(),
         );
@@ -1095,7 +1153,7 @@ Call ${handleDialog.name} to handle it before continuing.`);
 
         structuredContent.heapSnapshotData = formatter.toJSON();
         response.push(
-          useToon
+          useToon && toonEncode
             ? toonEncode(structuredContent.heapSnapshotData)
             : formatter.toString(),
         );
@@ -1155,6 +1213,44 @@ Call ${handleDialog.name} to handle it before continuing.`);
           response.push(HeapSnapshotFormatter.formatDominators(dominators));
         }
         structuredContent.heapSnapshotDominators = dominators;
+      }
+      const classDiffs = this.#heapSnapshotOptions.classDiffs;
+      if (classDiffs) {
+        response.push('### Heap Snapshot Diff');
+        response.push(
+          useToon && toonEncode
+            ? toonEncode(classDiffs)
+            : HeapSnapshotFormatter.formatDiffSummary(classDiffs),
+        );
+        structuredContent.heapSnapshotClassDiffs = classDiffs;
+      }
+      const detailedClassDiff = this.#heapSnapshotOptions.detailedClassDiff;
+      if (detailedClassDiff) {
+        response.push('### Heap Snapshot Detailed Diff');
+        response.push(
+          useToon && toonEncode
+            ? toonEncode(detailedClassDiff)
+            : HeapSnapshotFormatter.formatDiffDetails(detailedClassDiff),
+        );
+        structuredContent.heapSnapshotDetailedClassDiff = detailedClassDiff;
+      }
+      const duplicateStrings = this.#heapSnapshotOptions.duplicateStrings;
+      if (duplicateStrings) {
+        response.push('### Duplicate Strings');
+        const paginationData = this.#dataWithPagination(
+          duplicateStrings,
+          this.#heapSnapshotOptions.pagination,
+        );
+
+        structuredContent.pagination = paginationData.pagination;
+        response.push(...paginationData.info);
+
+        const formatted = HeapSnapshotFormatter.formatDuplicateStrings(
+          paginationData.items,
+        );
+        response.push(formatted);
+
+        structuredContent.heapSnapshotDuplicateStrings = paginationData.items;
       }
     }
 
@@ -1244,7 +1340,7 @@ Call ${handleDialog.name} to handle it before continuing.`);
             i.toJSON(),
           );
           response.push(
-            ...(useToon
+            ...(useToon && toonEncode
               ? [toonEncode(structuredContent.networkRequests)]
               : paginationData.items.map(i => i.toString())),
           );
@@ -1269,7 +1365,7 @@ Call ${handleDialog.name} to handle it before continuing.`);
           item.toJSON(),
         );
         response.push(...paginationData.info);
-        if (useToon) {
+        if (useToon && toonEncode) {
           response.push(toonEncode(structuredContent.consoleMessages));
         } else {
           response.push(...paginationData.items.map(item => item.toString()));
