@@ -69,6 +69,10 @@ interface McpContextOptions {
   allowList?: string[];
   // The block list of URL patterns to block loading resources.
   blocklist?: string[];
+  // Whether to skip path validation when the client did not negotiate the roots
+  // capability. When false (default), file-writing tools are restricted to the
+  // OS temp directory. When true, the previous permissive behavior is restored.
+  allowUnrestrictedPaths?: boolean;
 }
 
 const DEFAULT_TIMEOUT = 5_000;
@@ -110,6 +114,7 @@ export class McpContext implements Context {
   #options: McpContextOptions;
   #heapSnapshotManager = new HeapSnapshotManager();
   #roots: Root[] | undefined = undefined;
+  #allowUnrestrictedPaths: boolean;
 
   private constructor(
     browser: Browser,
@@ -127,6 +132,7 @@ export class McpContext implements Context {
     this.logger = logger;
     this.#locatorClass = locatorClass;
     this.#options = options;
+    this.#allowUnrestrictedPaths = options.allowUnrestrictedPaths ?? false;
 
     this.#networkCollector = new NetworkCollector(this.browser);
 
@@ -185,12 +191,9 @@ export class McpContext implements Context {
     return context;
   }
 
-  roots(): Root[] | undefined {
-    if (this.#roots === undefined) {
-      return undefined;
-    }
+  roots(): Root[] {
     return [
-      ...this.#roots,
+      ...(this.#roots ?? []),
       {
         uri: pathToFileURL(os.tmpdir()).href,
         name: 'temp',
@@ -206,10 +209,17 @@ export class McpContext implements Context {
     if (filePath === undefined) {
       return;
     }
-    const roots = this.roots();
-    if (roots === undefined) {
+    // If the client never negotiated roots and the operator has explicitly
+    // opted into unrestricted access via --allow-unrestricted-paths, restore
+    // the previous permissive behavior and skip validation.
+    if (this.#roots === undefined && this.#allowUnrestrictedPaths) {
       return;
     }
+    // roots() always returns at least the temp directory, even if the
+    // connecting client never negotiated the optional `roots` capability.
+    // Path validation must not be skipped just because no workspace roots
+    // were configured.
+    const roots = this.roots();
 
     let canonicalPath: string;
 
