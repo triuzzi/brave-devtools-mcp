@@ -96,6 +96,26 @@ describe('McpContext', () => {
         const page = await context.newPage();
         await context.createPagesSnapshot();
         assert.ok(page.devToolsPage);
+
+        // A devtools page is tracked but excluded from the listing, so its id
+        // must not resolve through `getPageById()` (which backs `select_page`
+        // and every other pageId tool). A second snapshot guarantees the
+        // devtools page is enrolled.
+        await context.createPagesSnapshot();
+        const listed = context.getPages();
+        assert.ok(
+          listed.every(
+            mcpPage => !mcpPage.pptrPage.url().startsWith('devtools://'),
+          ),
+          'listing should exclude devtools pages',
+        );
+        const listedIds = new Set(listed.map(mcpPage => mcpPage.id));
+        for (let id = 1; id < 30; id++) {
+          if (listedIds.has(id)) {
+            continue;
+          }
+          assert.throws(() => context.getPageById(id), /No page found/);
+        }
       },
       {
         autoOpenDevTools: true,
