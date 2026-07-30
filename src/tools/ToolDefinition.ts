@@ -6,7 +6,7 @@
 
 import type {ParsedArguments} from '../bin/brave-devtools-mcp-cli-options.js';
 import type {
-  AggregatedInfoWithId,
+  HeapSnapshotAggregateData,
   HeapSnapshotClassDiff,
   HeapSnapshotDetailedClassDiff,
   DuplicateStringGroup,
@@ -17,10 +17,11 @@ import type {
   Dialog,
   ElementHandle,
   Extension,
-  Page,
   ScreenRecorder,
   Viewport,
   DevTools,
+  Protocol,
+  Page,
 } from '../third_party/index.js';
 import type {InsightName, TraceResult} from '../trace-processing/parse.js';
 import type {
@@ -28,8 +29,8 @@ import type {
   GeolocationOptions,
   ExtensionServiceWorker,
 } from '../types.js';
-import type {PaginationOptions} from '../utils/types.js';
-import type {WaitForEventsResult} from '../WaitForHelper.js';
+import type {PaginationOptions} from '../types.js';
+import type {WaitForEventsResult, DialogAction} from '../WaitForHelper.js';
 
 import type {ToolCategory} from './categories.js';
 import type {ToolGroups} from './thirdPartyDeveloper.js';
@@ -107,10 +108,7 @@ export interface DevToolsData {
 export interface Response {
   appendResponseLine(value: string): void;
   setHeapSnapshotAggregates(
-    aggregates: Record<
-      string,
-      DevTools.HeapSnapshotModel.HeapSnapshotModel.AggregatedInfo
-    >,
+    aggregateData: HeapSnapshotAggregateData,
     options?: PaginationOptions,
   ): void;
   setHeapSnapshotStats(
@@ -185,7 +183,7 @@ export type SupportedExtensions =
   | '.html'
   | '.txt'
   | '.csv'
-  | '.json.gz';
+  | '.gz';
 
 /**
  * Only add methods used by tools/*.
@@ -208,18 +206,6 @@ export type Context = Readonly<{
   ): Promise<ContextPage>;
   closePage(pageId: number): Promise<void>;
   selectPage(page: ContextPage): void;
-  restoreEmulation(page: ContextPage): Promise<void>;
-  emulate(
-    options: {
-      networkConditions?: string;
-      cpuThrottlingRate?: number;
-      geolocation?: GeolocationOptions;
-      userAgent?: string;
-      colorScheme?: 'dark' | 'light' | 'auto';
-      viewport?: Viewport;
-    },
-    targetPage?: Page,
-  ): Promise<void>;
   saveTemporaryFile(
     data: Uint8Array<ArrayBufferLike>,
     filename: string,
@@ -229,18 +215,7 @@ export type Context = Readonly<{
     clientProvidedFilePath: string,
     extension: SupportedExtensions,
   ): Promise<{filename: string}>;
-  waitForTextOnPage(
-    text: string[],
-    timeout?: number,
-    page?: Page,
-  ): Promise<Element>;
-  /**
-   * Returns a reqid for a cdpRequestId.
-   */
-  resolveCdpRequestId(
-    page: ContextPage,
-    cdpRequestId: string,
-  ): number | undefined;
+
   getScreenRecorder(): {recorder: ScreenRecorder; filePath: string} | null;
   setScreenRecorder(
     data: {recorder: ScreenRecorder; filePath: string} | null,
@@ -257,7 +232,8 @@ export type Context = Readonly<{
   ): string | undefined;
   getHeapSnapshotAggregates(
     filePath: string,
-  ): Promise<Record<string, AggregatedInfoWithId>>;
+    filterName?: string,
+  ): Promise<HeapSnapshotAggregateData>;
   getHeapSnapshotDuplicateStrings(
     filePath: string,
   ): Promise<DuplicateStringGroup[]>;
@@ -270,6 +246,7 @@ export type Context = Readonly<{
   getHeapSnapshotNodesById(
     filePath: string,
     id: number,
+    filterName?: string,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange>;
   getHeapSnapshotRetainers(
     filePath: string,
@@ -312,12 +289,21 @@ export type ContextPage = Readonly<{
   getAXNodeByUid(uid: string): TextSnapshotNode | undefined;
   getElementByUid(uid: string): Promise<ElementHandle<Element>>;
 
+  /**
+   * Returns a reqid for a cdpRequestId.
+   */
+  resolveCdpRequestId(cdpRequestId: string): number | undefined;
+
   getDialog(): Dialog | undefined;
   clearDialog(): void;
   throwIfDialogOpen(): void;
   waitForEventsAfterAction(
     action: () => Promise<unknown>,
-    options?: {timeout?: number; handleDialog?: 'accept' | 'dismiss' | string},
+    options?: {
+      timeout?: number;
+      handleDialog?:
+        DialogAction | Partial<Record<Protocol.Page.DialogType, DialogAction>>;
+    },
   ): Promise<WaitForEventsResult>;
   getThirdPartyDeveloperTools(): ToolGroups;
 
@@ -327,6 +313,16 @@ export type ContextPage = Readonly<{
     response: Response,
   ): Promise<void>;
   getDevToolsData(): Promise<DevToolsData>;
+  restoreEmulation(): Promise<void>;
+  emulate(options: {
+    networkConditions?: string;
+    cpuThrottlingRate?: number;
+    geolocation?: GeolocationOptions;
+    userAgent?: string;
+    colorScheme?: 'dark' | 'light' | 'auto';
+    viewport?: Viewport;
+  }): Promise<void>;
+  waitForTextOnPage(text: string[], timeout?: number): Promise<Element>;
 }>;
 
 export function defineTool<Schema extends zod.ZodRawShape>(
