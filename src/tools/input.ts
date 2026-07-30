@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {logger} from '../logger.js';
 import type {McpContext} from '../McpContext.js';
 import {zod} from '../third_party/index.js';
 import type {ElementHandle, KeyInput} from '../third_party/index.js';
 import type {TextSnapshotNode} from '../types.js';
 import {parseKey} from '../utils/keyboard.js';
+import {logger} from '../utils/logger.js';
 import type {WaitForEventsResult} from '../WaitForHelper.js';
 
 import {ToolCategory} from './categories.js';
@@ -261,7 +261,7 @@ async function fillFormElement(
 ) {
   const handle = await page.getElementByUid(uid);
   try {
-    const aXNode = context.getAXNodeByUid(uid);
+    const aXNode = page.getAXNodeByUid(uid);
     // We assume that combobox needs to be handled as select if it has
     // role='combobox' and option children.
     if (aXNode && aXNode.role === 'combobox' && hasOptionChildren(aXNode)) {
@@ -469,7 +469,7 @@ export const uploadFile = definePageTool({
   },
   blockedByDialog: true,
   verifyFilesSchema: ['filePath'],
-  handler: async (request, response, _context) => {
+  handler: async (request, response) => {
     const {uid, filePath} = request.params;
     const handle = (await request.page.getElementByUid(
       uid,
@@ -526,12 +526,20 @@ export const pressKey = definePageTool({
     const [key, ...modifiers] = tokens;
 
     const result = await page.waitForEventsAfterAction(async () => {
-      for (const modifier of modifiers) {
-        await page.pptrPage.keyboard.down(modifier);
-      }
-      await page.pptrPage.keyboard.press(key);
-      for (const modifier of modifiers.toReversed()) {
-        await page.pptrPage.keyboard.up(modifier);
+      const heldModifiers: KeyInput[] = [];
+      try {
+        for (const modifier of modifiers) {
+          await page.pptrPage.keyboard.down(modifier);
+          heldModifiers.push(modifier);
+        }
+        await page.pptrPage.keyboard.press(key);
+      } finally {
+        // Release every modifier that was successfully pressed, even if a
+        // later key event throws. Otherwise a failed press leaves modifiers
+        // logically held down in the browser (see #2309).
+        for (const modifier of heldModifiers.toReversed()) {
+          await page.pptrPage.keyboard.up(modifier);
+        }
       }
     });
 
