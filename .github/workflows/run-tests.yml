@@ -71,8 +71,9 @@ jobs:
         shell: pwsh
         run: |
           choco install brave -y --no-progress
-          "BRAVE_PATH=C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "PUPPETEER_EXECUTABLE_PATH=C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $braveExecutablePath = Join-Path $env:LOCALAPPDATA "BraveSoftware\Brave-Browser\Application\brave.exe"
+          "BRAVE_PATH=$braveExecutablePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PUPPETEER_EXECUTABLE_PATH=$braveExecutablePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build
         run: npm run bundle
