@@ -16,7 +16,7 @@ import {logger} from './utils/logger.js';
 let browser: Browser | undefined;
 let browserMode: 'launched' | 'connected' | undefined;
 
-export type Channel = 'release' | 'beta' | 'nightly' | 'dev';
+export type Channel = 'release' | 'beta' | 'nightly';
 
 // Heavy pages (e.g. Studio module dev bundles >100MB) cannot ack
 // `Network.enable` and other auto-attached domain calls within
@@ -24,10 +24,17 @@ export type Channel = 'release' | 'beta' | 'nightly' | 'dev';
 // marked dead and every subsequent call throws — only daemon restart
 // recovers. Bumping the ceiling to 10min covers realistic loads;
 // override via env for power users.
-const PROTOCOL_TIMEOUT_MS = parseInt(
+const PROTOCOL_TIMEOUT_MILLISECONDS = Number(
   process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS ?? '600000',
-  10,
 );
+if (
+  !Number.isSafeInteger(PROTOCOL_TIMEOUT_MILLISECONDS) ||
+  PROTOCOL_TIMEOUT_MILLISECONDS <= 0
+) {
+  throw new Error(
+    'BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer.',
+  );
+}
 
 function makeTargetFilter(enableExtensions = false) {
   const ignoredPrefixes = new Set([
@@ -80,7 +87,6 @@ function resolveBraveExecutablePath(channel?: Channel): string {
       beta: '/Applications/Brave Browser Beta.app/Contents/MacOS/Brave Browser Beta',
       nightly:
         '/Applications/Brave Browser Nightly.app/Contents/MacOS/Brave Browser Nightly',
-      dev: '/Applications/Brave Browser Dev.app/Contents/MacOS/Brave Browser Dev',
     };
     const resolved = paths[channel ?? 'release'];
     if (fs.existsSync(resolved)) {
@@ -96,7 +102,6 @@ function resolveBraveExecutablePath(channel?: Channel): string {
       release: ['brave-browser', 'brave-browser-stable'],
       beta: ['brave-browser-beta'],
       nightly: ['brave-browser-nightly'],
-      dev: ['brave-browser-dev'],
     };
     const candidates = paths[channel ?? 'release'];
     for (const candidate of candidates) {
@@ -168,22 +173,6 @@ function resolveBraveExecutablePath(channel?: Channel): string {
           'brave.exe',
         ),
       ],
-      dev: [
-        path.join(
-          programFiles,
-          'BraveSoftware',
-          'Brave-Browser-Dev',
-          'Application',
-          'brave.exe',
-        ),
-        path.join(
-          localAppData,
-          'BraveSoftware',
-          'Brave-Browser-Dev',
-          'Application',
-          'brave.exe',
-        ),
-      ],
     };
     const candidates = paths[channel ?? 'release'];
     for (const candidate of candidates) {
@@ -226,13 +215,6 @@ function resolveBraveUserDataDir(channel?: Channel): string {
         'BraveSoftware',
         'Brave-Browser-Nightly',
       ),
-      dev: path.join(
-        home,
-        'Library',
-        'Application Support',
-        'BraveSoftware',
-        'Brave-Browser-Dev',
-      ),
     };
     return dirs[channel ?? 'release'];
   }
@@ -244,7 +226,6 @@ function resolveBraveUserDataDir(channel?: Channel): string {
       release: path.join(configDir, 'BraveSoftware', 'Brave-Browser'),
       beta: path.join(configDir, 'BraveSoftware', 'Brave-Browser-Beta'),
       nightly: path.join(configDir, 'BraveSoftware', 'Brave-Browser-Nightly'),
-      dev: path.join(configDir, 'BraveSoftware', 'Brave-Browser-Dev'),
     };
     return dirs[channel ?? 'release'];
   }
@@ -269,12 +250,6 @@ function resolveBraveUserDataDir(channel?: Channel): string {
         localAppData,
         'BraveSoftware',
         'Brave-Browser-Nightly',
-        'User Data',
-      ),
-      dev: path.join(
-        localAppData,
-        'BraveSoftware',
-        'Brave-Browser-Dev',
         'User Data',
       ),
     };
@@ -304,7 +279,7 @@ export async function ensureBrowserConnected(options: {
     targetFilter: makeTargetFilter(enableExtensions),
     defaultViewport: null,
     handleDevToolsAsPage: true,
-    protocolTimeout: PROTOCOL_TIMEOUT_MS,
+    protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
     blocklist: options.blocklist,
     allowlist: options.allowlist,
   };
@@ -467,7 +442,7 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
       acceptInsecureCerts: options.acceptInsecureCerts,
       handleDevToolsAsPage: true,
       enableExtensions: options.enableExtensions,
-      protocolTimeout: PROTOCOL_TIMEOUT_MS,
+      protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
       blocklist: options.blocklist,
       allowlist: options.allowlist,
     });

@@ -17,8 +17,14 @@ import {
   stopDaemon,
   sendCommand,
   handleResponse,
+  verifyDaemonVersion,
 } from '../daemon/client.js';
-import {isDaemonRunning, serializeArgs} from '../daemon/utils.js';
+import type {DaemonStatusResult} from '../daemon/types.js';
+import {
+  isDaemonRunning,
+  serializeArgs,
+  assertValidSessionId,
+} from '../daemon/utils.js';
 import {logDisclaimers} from '../index.js';
 import {hideBin, yargs, type CallToolResult} from '../third_party/index.js';
 import {checkForUpdates} from '../utils/check-for-updates.js';
@@ -28,7 +34,7 @@ import {commands} from './brave-devtools-cli-options.js';
 import {cliOptions, parseArguments} from './brave-devtools-mcp-cli-options.js';
 
 await checkForUpdates(
-  'Run `npm install -g brave-devtools-mcp@latest` and `brave-devtools start` to update and restart the daemon.',
+  'Run `npm install -g brave-mcp@latest` and `brave-devtools start` to update and restart the daemon.',
 );
 
 async function start(args: string[], sessionId: string) {
@@ -74,6 +80,10 @@ const y = yargs(hideBin(process.argv))
     description: 'Session ID for daemon scoping',
     default: '',
     hidden: true,
+    coerce: (sessionId: string) => {
+      assertValidSessionId(sessionId);
+      return sessionId;
+    },
   })
   .demandCommand()
   .version(VERSION)
@@ -132,20 +142,11 @@ y.command(
     if (isDaemonRunning(argv.sessionId)) {
       await stopDaemon(argv.sessionId);
     }
-    // Defaults only apply to *spawn* mode. Skip / clear them when
-    // attaching to an existing browser, otherwise `status` shows
-    // misleading args like `--browserUrl X --headless --isolated`
-    // together (the runtime ignores headless/isolated under attach,
-    // but storing them anyway is a footgun if the resolver order ever
-    // changes — and confuses anyone reading `status` output).
     const isAttachMode =
       argv.browserUrl !== undefined ||
       argv.wsEndpoint !== undefined ||
       argv.autoConnect === true;
     if (isAttachMode) {
-      // Strip spawn-mode flags so serializeArgs doesn't emit them.
-      // Headless has `default: true` in the CLI override, so this is
-      // necessary even when the user didn't pass `--headless`.
       delete argv.headless;
       delete argv.isolated;
     } else {
@@ -176,17 +177,16 @@ y.command(
         argv.sessionId,
       );
       if (response.success) {
-        const data = JSON.parse(response.result) as {
-          pid: number | null;
-          socketPath: string;
-          startDate: string;
-          version: string;
-          args: string[];
-        };
+        const data: DaemonStatusResult = JSON.parse(response.result);
         console.log(
           `pid=${data.pid} socket=${data.socketPath} start-date=${data.startDate} version=${data.version}`,
         );
         console.log(`args=${JSON.stringify(data.args)}`);
+        if (data.version !== VERSION) {
+          console.warn(
+            `Warning: Daemon server version (${data.version}) does not match CLI version (${VERSION}). Run 'brave-devtools start' to update and restart the daemon.`,
+          );
+        }
       } else {
         console.error('Error:', response.error);
         process.exit(1);
@@ -279,8 +279,12 @@ for (const [commandName, commandDef] of Object.entries(commands)) {
     async argv => {
       const sessionId = argv.sessionId as string;
       try {
+        const versionWarningPromise = isDaemonRunning(sessionId)
+          ? verifyDaemonVersion(sessionId, VERSION)
+          : Promise.resolve(undefined);
+
         if (!isDaemonRunning(sessionId)) {
-          await start([], sessionId);
+          await start(serializeArgs(cliOptions, argv), sessionId);
         }
 
         const commandArgs: Record<string, unknown> = {};
@@ -308,6 +312,14 @@ for (const [commandName, commandDef] of Object.entries(commands)) {
           );
         } else {
           console.error('Error:', response.error);
+        }
+
+        const versionWarning = await versionWarningPromise;
+        if (versionWarning) {
+          console.warn(versionWarning);
+        }
+
+        if (!response.success) {
           process.exit(1);
         }
       } catch (error) {

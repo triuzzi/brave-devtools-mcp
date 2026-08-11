@@ -39,7 +39,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       channel: 'release',
     });
   });
@@ -54,7 +54,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       'browser-url': 'http://localhost:3000',
       browserUrl: 'http://localhost:3000',
       u: 'http://localhost:3000',
@@ -64,17 +64,17 @@ describe('cli args parsing', () => {
   it('parses with user data dir', async () => {
     const args = parseArguments(
       '1.0.0',
-      ['node', 'main.js', '--user-data-dir', '/tmp/brave-profile'],
+      ['node', 'main.js', '--user-data-dir', '/tmp/chrome-profile'],
       {},
     );
     assert.deepStrictEqual(args, {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       channel: 'release',
-      'user-data-dir': '/tmp/brave-profile',
-      userDataDir: '/tmp/brave-profile',
+      'user-data-dir': '/tmp/chrome-profile',
+      userDataDir: '/tmp/chrome-profile',
     });
   });
 
@@ -88,7 +88,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       'browser-url': undefined,
       browserUrl: undefined,
       u: undefined,
@@ -106,7 +106,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       'executable-path': '/tmp/test 123/brave',
       e: '/tmp/test 123/brave',
       executablePath: '/tmp/test 123/brave',
@@ -123,7 +123,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       channel: 'release',
       viewport: {
         width: 888,
@@ -132,7 +132,7 @@ describe('cli args parsing', () => {
     });
   });
 
-  it('parses brave args', async () => {
+  it('parses Brave args', async () => {
     const args = parseArguments(
       '1.0.0',
       [
@@ -147,14 +147,14 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       channel: 'release',
       'brave-arg': ['--no-sandbox', '--disable-setuid-sandbox'],
       braveArg: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
   });
 
-  it('parses ignore brave args', async () => {
+  it('parses ignored default Brave args', async () => {
     const args = parseArguments(
       '1.0.0',
       [
@@ -169,7 +169,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       channel: 'release',
       'ignore-default-brave-arg': [
         '--disable-extensions',
@@ -197,7 +197,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       'ws-endpoint': 'ws://127.0.0.1:9222/devtools/browser/abc123',
       wsEndpoint: 'ws://127.0.0.1:9222/devtools/browser/abc123',
       w: 'ws://127.0.0.1:9222/devtools/browser/abc123',
@@ -219,7 +219,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       'ws-endpoint': 'wss://example.com:9222/devtools/browser/abc123',
       wsEndpoint: 'wss://example.com:9222/devtools/browser/abc123',
       w: 'wss://example.com:9222/devtools/browser/abc123',
@@ -255,7 +255,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       channel: 'release',
       'category-emulation': false,
       categoryEmulation: false,
@@ -271,7 +271,7 @@ describe('cli args parsing', () => {
       ...defaultArgs,
       _: [],
       headless: false,
-      $0: 'npx brave-devtools-mcp@latest',
+      $0: 'npx brave-mcp@latest',
       channel: 'release',
       'auto-connect': true,
       autoConnect: true,
@@ -279,7 +279,7 @@ describe('cli args parsing', () => {
   });
 
   it('parses usage statistics flag', async () => {
-    // Brave default is off.
+    // Test the privacy-preserving default.
     const defaultArgs = parseArguments('1.0.0', ['node', 'main.js'], {});
     assert.strictEqual(defaultArgs.usageStatistics, false);
 
@@ -301,13 +301,13 @@ describe('cli args parsing', () => {
   });
 
   it('respects env variable', async () => {
-    // Default already false, env keeps it false.
+    // Test default (should be true).
     const defaultArgs = parseArguments('1.0.0', ['node', 'main.js'], {
       BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true',
     });
     assert.strictEqual(defaultArgs.usageStatistics, false);
 
-    // Env overrides --usage-statistics flag.
+    // Test enabling it
     const enabledArgs = parseArguments(
       '1.0.0',
       ['node', 'main.js', '--usage-statistics'],
@@ -317,7 +317,7 @@ describe('cli args parsing', () => {
     );
     assert.strictEqual(enabledArgs.usageStatistics, false);
 
-    // --no-usage-statistics keeps it false too.
+    // Test disabling it
     const disabledArgs = parseArguments(
       '1.0.0',
       ['node', 'main.js', '--no-usage-statistics'],

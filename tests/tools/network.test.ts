@@ -54,7 +54,7 @@ describe('network', () => {
           response,
           context,
         );
-        const responseData = await response.handle('list_request', context);
+        const responseData = await response.handle(context);
         t.assert.snapshot(
           stabilizeResponseOutput(getTextContent(responseData.content[0])),
         );
@@ -82,7 +82,7 @@ describe('network', () => {
           response,
           context,
         );
-        const responseData = await response.handle('list_request', context);
+        const responseData = await response.handle(context);
         t.assert.snapshot(
           stabilizeResponseOutput(getTextContent(responseData.content[0])),
         );
@@ -125,7 +125,7 @@ describe('network', () => {
           response,
           context,
         );
-        const responseData = await response.handle('list_request', context);
+        const responseData = await response.handle(context);
         t.assert.snapshot(
           stabilizeResponseOutput(getTextContent(responseData.content[0])),
         );
@@ -158,7 +158,7 @@ describe('network', () => {
         assert(!response.includeNetworkRequests);
       });
     });
-    it('should get request from previous navigations', async t => {
+    it('should get request from previous navigations', async () => {
       server.addHtmlRoute('/one', html`<main>First</main>`);
       server.addHtmlRoute('/two', html`<main>Second</main>`);
       server.addHtmlRoute('/three', html`<main>Third</main>`);
@@ -179,11 +179,15 @@ describe('network', () => {
           response,
           context,
         );
-        const responseData = await response.handle('get_request', context);
+        const responseData = await response.handle(context);
 
-        t.assert.snapshot(
-          stabilizeResponseOutput(getTextContent(responseData.content[0])),
+        const responseText = stabilizeResponseOutput(
+          getTextContent(responseData.content[0]),
         );
+        assert.ok(
+          responseText.includes('## Request http://127.0.0.1:<port>/one'),
+        );
+        assert.ok(responseText.includes('Status: 200'));
       });
     });
   });

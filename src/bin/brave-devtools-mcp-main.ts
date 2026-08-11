@@ -13,10 +13,13 @@ import {createMcpServer, logDisclaimers} from '../index.js';
 import {ClearcutLogger} from '../telemetry/ClearcutLogger.js';
 import {computeFlagUsage} from '../telemetry/flagUtils.js';
 import {StdioServerTransport} from '../third_party/index.js';
+import {checkForUpdates} from '../utils/check-for-updates.js';
 import {logger, saveLogsToFile} from '../utils/logger.js';
 import {VERSION} from '../version.js';
 
 import {cliOptions, parseArguments} from './brave-devtools-mcp-cli-options.js';
+
+await checkForUpdates('Run `npm install brave-mcp@latest` to update.');
 
 export const args = parseArguments(VERSION);
 
@@ -30,7 +33,7 @@ if (process.env['BRAVE_DEVTOOLS_MCP_CRASH_ON_UNCAUGHT'] !== 'true') {
 
 // Shutdown on stdin EOF (stdio MCP convention — the client closes the
 // transport to signal exit) and on standard termination signals. Without
-// this, an active Brave subprocess keeps the Node event loop ref'd after
+// this, an active Chrome subprocess keeps the Node event loop ref'd after
 // stdin closes and the server hangs until something else kills it.
 let shuttingDown = false;
 async function shutdown(reason: string): Promise<void> {
@@ -39,14 +42,14 @@ async function shutdown(reason: string): Promise<void> {
   }
   shuttingDown = true;
   logger?.(`Shutting down (${reason})`);
-  // Backstop in case browser teardown hangs (e.g. unresponsive Brave,
+  // Backstop in case browser teardown hangs (e.g. unresponsive Chrome,
   // slow beforeunload handlers, many tabs). Exits 0 because we still
   // honored the shutdown request; the log line preserves observability.
   // Unref'd so it doesn't keep the loop alive on the clean path.
   setTimeout(() => {
     logger?.('Shutdown timeout exceeded, forcing exit');
     process.exit(0);
-  }, 10000).unref();
+  }, 5000).unref();
   await closeBrowser();
   process.exit(0);
 }

@@ -40,7 +40,7 @@ async function fetchTools() {
 
   const client = new Client(
     {
-      name: 'chrome-devtools-cli-generator',
+      name: 'brave-devtools-cli-generator',
       version: '0.1.0',
     },
     {

@@ -90,9 +90,9 @@ async function runTests(attempt) {
       stdio: 'inherit',
       env: {
         ...process.env,
-        CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: true,
-        CHROME_DEVTOOLS_MCP_CRASH_ON_UNCAUGHT: true,
-        CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: true,
+        BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: true,
+        BRAVE_DEVTOOLS_MCP_CRASH_ON_UNCAUGHT: true,
+        BRAVE_DEVTOOLS_MCP_NO_UPDATE_CHECKS: true,
         ...(process.env['RUNNER_DEBUG'] === '1' ? {DEBUG: 'puppeteer:*'} : {}),
       },
     });

@@ -1,19 +1,19 @@
 # Brave DevTools CLI
 
-The `brave-devtools-mcp` package includes an **experimental** CLI interface that allows you to interact with the browser directly from your terminal. This is particularly useful for debugging or when you want an agent to generate scripts that automate browser actions.
+The `brave-mcp` package includes an **experimental** CLI interface that allows you to interact with the browser directly from your terminal. This is particularly useful for debugging or when you want an agent to generate scripts that automate browser actions.
 
 ## Getting started
 
 Install the package globally to make the `brave-devtools` command available:
 
 ```sh
-npm i brave-devtools-mcp@latest -g
+npm i brave-mcp@latest -g
 brave-devtools status # check if install worked.
 ```
 
 ## How it works
 
-The CLI acts as a client to a background `brave-devtools-mcp` daemon (uses Unix sockets on Linux/Mac and named pipes on Windows).
+The CLI acts as a client to a background `brave-mcp` daemon (uses Unix sockets on Linux/Mac and named pipes on Windows).
 
 - **Automatic Start**: The first time you call a tool (e.g., `list_pages`), the CLI automatically starts the MCP server and the browser in the background if they aren't already running.
 - **Persistence**: The same background instance is reused for subsequent commands, preserving the browser state (open pages, cookies, etc.).
@@ -24,7 +24,7 @@ The CLI acts as a client to a background `brave-devtools-mcp` daemon (uses Unix 
 brave-devtools status
 
 # Navigate the current page to a URL
-brave-devtools navigate_page url --url "https://google.com"
+brave-devtools navigate_page "https://google.com"
 
 # Take a screenshot and save it to a file
 brave-devtools take_screenshot --filePath screenshot.png
@@ -51,7 +51,7 @@ brave-devtools <tool> [arguments] [flags]
 
 ```sh
 brave-devtools new_page "https://example.com"
-brave-devtools navigate_page url --url "https://web.dev"
+brave-devtools navigate_page "https://web.dev" --type url
 ```
 
 **Interaction:**
@@ -98,5 +98,5 @@ DEBUG=* brave-devtools list_pages
 Implemented in `scripts/generate-cli.ts`. Some commands are excluded from CLI
 generation such as `wait_for` and `fill_form`.
 
-`brave-devtools-mcp` args are also filtered in `src/bin/brave-devtools.ts`
+`brave-mcp` args are also filtered in `src/bin/brave-devtools.ts`
 because not all args make sense in a CLI interface.
