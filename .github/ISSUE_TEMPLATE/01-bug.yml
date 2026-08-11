@@ -1,5 +1,5 @@
 name: Bug report
-description: File a bug report for chrome-devtools-mcp
+description: File a bug report for brave-mcp
 title: '<short description of the bug>'
 type: 'Bug'
 body:
@@ -34,17 +34,17 @@ body:
     attributes:
       label: MCP configuration
 
-  - id: chrome-devtools-mcp-version
+  - id: brave-mcp-version
     type: input
     attributes:
-      label: Chrome DevTools MCP version
+      label: Brave DevTools MCP version
     validations:
       required: true
 
   - id: chrome-version
     type: input
     attributes:
-      label: Chrome version
+      label: Brave version
 
   - id: coding-agent-version
     type: input

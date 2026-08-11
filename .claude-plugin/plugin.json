@@ -1,12 +1,12 @@
 {
-  "name": "brave-mcp",
-  "version": "1.2.0",
+  "name": "brave-devtools-mcp",
+  "version": "1.7.0",
   "description": "Reliable automation, in-depth debugging, and performance analysis in Brave using DevTools and Puppeteer",
   "mcpServers": {
     "brave-devtools": {
       "command": "npx",
       "args": [
-        "brave-mcp@0.6.0"
+        "brave-mcp@1.7.0"
       ]
     }
   }

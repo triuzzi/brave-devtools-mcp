@@ -150,5 +150,4 @@ log.txt
 
 .DS_Store
 
-# AI tooling (local only)
-.claude/
+mcp-heap-profiles/

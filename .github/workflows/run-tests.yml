@@ -1,6 +1,7 @@
 name: Compile and run tests
 
-permissions: read-all
+permissions:
+  contents: read
 
 on:
   merge_group:
@@ -27,12 +28,13 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+          submodules: true
 
       - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           cache: npm
           node-version: 22 # build works only with 22+.
@@ -42,26 +44,6 @@ jobs:
         run: npm ci
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
-
-      - name: Install browser
-        shell: bash
-        run: npx puppeteer browsers install chrome
-
-      - name: Build
-        run: npm run bundle
-        env:
-          NODE_OPTIONS: '--max_old_space_size=4096'
-
-      - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          cache: npm
-          node-version: ${{ matrix.node }}
-
-      - name: Disable AppArmor
-        if: ${{ matrix.os == 'ubuntu-latest' }}
-        shell: bash
-        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
 
       - name: Install Brave Browser (Ubuntu)
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -73,16 +55,41 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/brave-browser-release.list
           sudo apt-get update
           sudo apt-get install -y brave-browser
+          echo "BRAVE_PATH=/usr/bin/brave-browser" >> "$GITHUB_ENV"
+          echo "PUPPETEER_EXECUTABLE_PATH=/usr/bin/brave-browser" >> "$GITHUB_ENV"
 
       - name: Install Brave Browser (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
         shell: bash
-        run: brew install --cask brave-browser
+        run: |
+          brew install --cask brave-browser
+          echo "BRAVE_PATH=/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" >> "$GITHUB_ENV"
+          echo "PUPPETEER_EXECUTABLE_PATH=/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" >> "$GITHUB_ENV"
 
       - name: Install Brave Browser (Windows)
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
-        run: choco install brave -y --no-progress
+        run: |
+          choco install brave -y --no-progress
+          $braveExecutablePath = Join-Path $env:LOCALAPPDATA "BraveSoftware\Brave-Browser\Application\brave.exe"
+          "BRAVE_PATH=$braveExecutablePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PUPPETEER_EXECUTABLE_PATH=$braveExecutablePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build
+        run: npm run bundle
+        env:
+          NODE_OPTIONS: '--max_old_space_size=4096'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          cache: npm
+          node-version: ${{ matrix.node }}
+
+      - name: Disable AppArmor
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        shell: bash
+        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
 
       - name: Run tests
         shell: bash
@@ -91,6 +98,11 @@ jobs:
           npm run test:no-build --
           ${{ matrix.os == 'windows-latest' && '--test-concurrency=1' || '' }}
           ${{ github.event_name == 'merge_group' && '--retry' || '' }}
+
+      - name: Run notices tests
+        shell: bash
+        run: >
+          npm run test:notices:no-build
 
   # Gating job for branch protection.
   test-success:

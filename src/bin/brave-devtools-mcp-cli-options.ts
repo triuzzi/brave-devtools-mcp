@@ -11,7 +11,7 @@ export const cliOptions = {
   autoConnect: {
     type: 'boolean',
     description:
-      'If specified, automatically connects to a Brave instance running locally from the user data directory identified by the channel param (default channel is release). Requires the remote debugging server to be started in the Brave instance via brave://inspect/#remote-debugging.',
+      'If specified, automatically connects to a Brave instance running locally from the user data directory identified by the channel parameter (default channel is release). Requires remote debugging to be enabled via brave://inspect/#remote-debugging.',
     conflicts: ['isolated', 'executablePath'],
     default: false,
     coerce: (value: boolean | undefined) => {
@@ -24,7 +24,7 @@ export const cliOptions = {
   browserUrl: {
     type: 'string',
     description:
-      'Connect to a running, debuggable Brave instance (e.g. `http://127.0.0.1:9222`).',
+      'Connect to a running, debuggable Brave instance (e.g. `http://127.0.0.1:9222`). For more details see: https://github.com/triuzzi/brave-devtools-mcp#connecting-to-a-running-brave-instance.',
     alias: 'u',
     conflicts: ['wsEndpoint'],
     coerce: (url: string | undefined) => {
@@ -95,7 +95,7 @@ export const cliOptions = {
   executablePath: {
     type: 'string',
     description:
-      'Path to custom Brave executable. Can also be set via BRAVE_PATH environment variable.',
+      'Path to a custom Brave executable. Can also be set via BRAVE_PATH.',
     conflicts: ['browserUrl', 'wsEndpoint'],
     alias: 'e',
   },
@@ -113,8 +113,8 @@ export const cliOptions = {
   channel: {
     type: 'string',
     description:
-      'Specify a different Brave channel that should be used. The default is the release channel.',
-    choices: ['release', 'beta', 'nightly', 'dev'] as const,
+      'Specify a different Brave channel. The default is the release channel.',
+    choices: ['release', 'beta', 'nightly'] as const,
     conflicts: ['browserUrl', 'wsEndpoint', 'executablePath'],
   },
   logFile: {
@@ -125,7 +125,7 @@ export const cliOptions = {
   viewport: {
     type: 'string',
     describe:
-      'Initial viewport size for the Brave instances started by the server. For example, `1280x720`. In headless mode, max size is 3840x2160px.',
+      'Initial viewport size for Brave instances started by the server. For example, `1280x720`. In headless mode, max size is 3840x2160px.',
     coerce: (arg: string | undefined) => {
       if (arg === undefined) {
         return;
@@ -207,7 +207,7 @@ export const cliOptions = {
   categoryExperimentalWebmcp: {
     type: 'boolean',
     describe:
-      'Set to true to enable debugging WebMCP tools. Requires Brave with the following flags: `--enable-features=WebMCP,DevToolsWebMCPSupport`',
+      'Set to true to enable debugging WebMCP tools. Requires a recent Brave version with the following flags: `--enable-features=WebMCP,DevToolsWebMCPSupport`',
   },
   braveArg: {
     type: 'array',
@@ -223,7 +223,7 @@ export const cliOptions = {
   allowedUrlPattern: {
     type: 'array',
     describe:
-      "Restricts browser's network access by allowing only specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Requires Chrome 149+. Silently detaches from targets with unallowed URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns.",
+      "Restricts browser's network access by allowing only specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Requires a recent Brave version. Silently detaches from targets with unallowed URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns.",
     conflicts: ['blockedUrlPattern'],
   },
   ignoreDefaultBraveArg: {
@@ -251,13 +251,20 @@ export const cliOptions = {
     hidden: false,
     default: false,
     describe:
-      'Set to true to include tools related to extensions. Note: This feature is currently only supported with a pipe connection. autoConnect, browserUrl, and wsEndpoint are not supported with this feature until 149 will be released.',
+      'Set to true to include tools related to extensions. This feature is only supported with a pipe connection; autoConnect, browserUrl, and wsEndpoint are not supported.',
   },
   categoryExperimentalThirdParty: {
     type: 'boolean',
     default: false,
     describe:
       'Set to true to enable third-party developer tools exposed by the inspected page itself',
+  },
+  categoryPwa: {
+    type: 'boolean',
+    hidden: false,
+    conflicts: ['autoConnect', 'browserUrl', 'wsEndpoint'],
+    describe:
+      'Set to true to include tools for automating Progressive Web Apps (install, launch, uninstall, and OS state). This feature is only supported with a pipe connection; autoConnect, browserUrl, and wsEndpoint are not supported.',
   },
   performanceCrux: {
     type: 'boolean',
@@ -268,7 +275,8 @@ export const cliOptions = {
   usageStatistics: {
     type: 'boolean',
     default: false,
-    describe: 'Usage statistics collection (disabled by default in this fork).',
+    describe:
+      'Usage statistics collection is disabled by default in this fork.',
   },
   clearcutEndpoint: {
     type: 'string',
@@ -375,7 +383,7 @@ export function parseArguments(
   env = process.env,
 ) {
   const yargsInstance = yargs(hideBin(argv))
-    .scriptName('npx brave-devtools-mcp@latest')
+    .scriptName('npx brave-mcp@latest')
     .options(cliOptions)
     .middleware(args => {
       // We can't set default in the options else
@@ -398,11 +406,11 @@ export function parseArguments(
     .example([
       [
         '$0 --browserUrl http://127.0.0.1:9222',
-        'Connect to an existing Brave instance via HTTP',
+        'Connect to an existing browser instance via HTTP',
       ],
       [
         '$0 --wsEndpoint ws://127.0.0.1:9222/devtools/browser/abc123',
-        'Connect to an existing Brave instance via WebSocket',
+        'Connect to an existing browser instance via WebSocket',
       ],
       [
         `$0 --wsEndpoint ws://127.0.0.1:9222/devtools/browser/abc123 --wsHeaders '{"Authorization":"Bearer token"}'`,
@@ -410,7 +418,6 @@ export function parseArguments(
       ],
       ['$0 --channel beta', 'Use Brave Beta installed on this system'],
       ['$0 --channel nightly', 'Use Brave Nightly installed on this system'],
-      ['$0 --channel dev', 'Use Brave Dev installed on this system'],
       ['$0 --channel release', 'Use release Brave installed on this system'],
       ['$0 --logFile /tmp/log.txt', 'Save logs to a file'],
       ['$0 --help', 'Print CLI options'],
@@ -438,11 +445,16 @@ export function parseArguments(
       ],
       [
         '$0 --auto-connect',
-        'Connect to a release Brave instance running instead of launching a new instance',
+        'Connect to a release Brave instance instead of launching a new instance',
       ],
       [
         '$0 --auto-connect --channel=nightly',
-        'Connect to a nightly Brave instance running instead of launching a new instance',
+        'Connect to a nightly Brave instance instead of launching a new instance',
+      ],
+      ['$0 --no-usage-statistics', 'Keep usage statistics disabled.'],
+      [
+        '$0 --no-performance-crux',
+        'Disable CrUX (field data) integration in performance tools.',
       ],
       [
         '$0 --slim',

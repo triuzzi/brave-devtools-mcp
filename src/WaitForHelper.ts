@@ -18,7 +18,9 @@ export class WaitForHelper {
   #expectNavigationIn: number;
   #navigationTimeout: number;
 
-  #dialogOpened = false;
+  #dialogHandled = false;
+  /** Track all dialogs as they pause the renderer. */
+  #dialogDetected = false;
   #initialUrl: string;
 
   constructor(
@@ -40,31 +42,41 @@ export class WaitForHelper {
    * for the DOM to be stable before returning.
    */
   async waitForStableDom(): Promise<void> {
-    const stableDomObserver = await this.#page.evaluateHandle(timeout => {
-      let timeoutId: ReturnType<typeof setTimeout>;
-      function callback() {
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-          domObserver.resolver.resolve();
-          domObserver.observer.disconnect();
-        }, timeout);
-      }
-      const domObserver = {
-        resolver: Promise.withResolvers<void>(),
-        observer: new MutationObserver(callback),
-      };
-      // It's possible that the DOM is not gonna change so we
-      // need to start the timeout initially.
-      callback();
+    // Bound the setup evaluation against the stable-DOM timeout. Without this
+    // cap a paused renderer (e.g. an open dialog) would make evaluateHandle
+    // hang until protocolTimeout (default 180s) while the tool mutex is held.
+    using stableDomObserver = await Promise.race([
+      this.#page.evaluateHandle(timeout => {
+        let timeoutId: ReturnType<typeof setTimeout>;
+        function callback() {
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            domObserver.resolver.resolve();
+            domObserver.observer.disconnect();
+          }, timeout);
+        }
+        const domObserver = {
+          resolver: Promise.withResolvers<void>(),
+          observer: new MutationObserver(callback),
+        };
+        // It's possible that the DOM is not gonna change so we
+        // need to start the timeout initially.
+        callback();
 
-      domObserver.observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-      });
+        domObserver.observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+        });
 
-      return domObserver;
-    }, this.#stableDomFor);
+        return domObserver;
+      }, this.#stableDomFor),
+      this.timeout(this.#stableDomTimeout) as Promise<undefined>,
+    ]).catch(() => undefined);
+
+    if (!stableDomObserver) {
+      return;
+    }
 
     this.#abortController.signal.addEventListener('abort', async () => {
       try {
@@ -72,7 +84,6 @@ export class WaitForHelper {
           observer.observer.disconnect();
           observer.resolver.resolve();
         });
-        await stableDomObserver.dispose();
       } catch {
         // Ignored cleanup errors
       }
@@ -85,38 +96,6 @@ export class WaitForHelper {
       this.timeout(this.#stableDomTimeout).then(() => {
         throw new Error('Timeout');
       }),
-    ]);
-  }
-
-  async waitForNavigationStarted() {
-    // Currently Puppeteer does not have API
-    // For when a navigation is about to start
-    const navigationStartedPromise = new Promise<boolean>(resolve => {
-      const listener = (event: Protocol.Page.FrameStartedNavigatingEvent) => {
-        if (
-          [
-            'historySameDocument',
-            'historyDifferentDocument',
-            'sameDocument',
-          ].includes(event.navigationType)
-        ) {
-          resolve(false);
-          return;
-        }
-
-        resolve(true);
-      };
-
-      this.#page._client().on('Page.frameStartedNavigating', listener);
-      this.#abortController.signal.addEventListener('abort', () => {
-        resolve(false);
-        this.#page._client().off('Page.frameStartedNavigating', listener);
-      });
-    });
-
-    return await Promise.race([
-      navigationStartedPromise,
-      this.timeout(this.#expectNavigationIn).then(() => false),
     ]);
   }
 
@@ -134,6 +113,8 @@ export class WaitForHelper {
     action: () => Promise<unknown>,
     options?: {
       timeout?: number;
+      waitForStableDom?: boolean;
+      expectNavigationIn?: number;
       handleDialog?:
         DialogAction | Partial<Record<Protocol.Page.DialogType, DialogAction>>;
     },
@@ -141,46 +122,100 @@ export class WaitForHelper {
     if (this.#abortController.signal.aborted) {
       throw new Error("Can't re-use a WaitForHelper");
     }
-    if (options?.handleDialog) {
-      const dialogHandler = (
-        dialog: Pick<Dialog, 'accept' | 'dismiss' | 'type'>,
-      ) => {
-        let actionToTake: DialogAction | undefined;
+    const dialogHandler = (
+      dialog: Pick<Dialog, 'accept' | 'dismiss' | 'type'>,
+    ) => {
+      this.#dialogDetected = true;
 
-        if (typeof options.handleDialog === 'object') {
-          actionToTake = options.handleDialog[dialog.type()];
-        } else {
-          actionToTake = options.handleDialog;
-        }
-
-        if (actionToTake) {
-          this.#dialogOpened = true;
-          if (actionToTake === 'dismiss') {
-            void dialog.dismiss();
-          } else if (actionToTake === 'accept') {
-            void dialog.accept();
-          } else {
-            void dialog.accept(actionToTake);
-          }
-        }
-      };
-      this.#page.on('dialog', dialogHandler);
-      this.#abortController.signal.addEventListener('abort', () => {
-        this.#page.off('dialog', dialogHandler);
-      });
-    }
-
-    const navigationFinished = this.waitForNavigationStarted()
-      .then(navigationStated => {
-        if (navigationStated) {
-          return this.#page.waitForNavigation({
-            timeout: options?.timeout ?? this.#navigationTimeout,
-            signal: this.#abortController.signal,
-          });
-        }
+      if (!options?.handleDialog) {
         return;
+      }
+
+      let actionToTake: DialogAction | undefined;
+
+      if (typeof options.handleDialog === 'object') {
+        actionToTake = options.handleDialog[dialog.type()];
+      } else {
+        actionToTake = options.handleDialog;
+      }
+
+      if (actionToTake) {
+        this.#dialogHandled = true;
+        if (actionToTake === 'dismiss') {
+          void dialog.dismiss();
+        } else if (actionToTake === 'accept') {
+          void dialog.accept();
+        } else {
+          void dialog.accept(actionToTake);
+        }
+      }
+    };
+    this.#page.on('dialog', dialogHandler);
+    this.#abortController.signal.addEventListener('abort', () => {
+      this.#page.off('dialog', dialogHandler);
+    });
+
+    // A scoped AbortController used to clean up navigation probe listeners.
+    // When aborted (either after navigation detection finishes or if this.#abortController
+    // aborts), it removes the CDP Page.frameStartedNavigating listener and automatically
+    // detaches the abort listener from this.#abortController.signal.
+    const navigationAbortController = new AbortController();
+    const navigationStartedResolvers = Promise.withResolvers<boolean>();
+
+    const navigationListener = (
+      event: Protocol.Page.FrameStartedNavigatingEvent,
+    ) => {
+      if (event.frameId !== this.#page.mainFrame()._id) {
+        return;
+      }
+      if (
+        event.navigationType === 'sameDocument' ||
+        event.navigationType === 'historySameDocument'
+      ) {
+        return;
+      }
+
+      navigationStartedResolvers.resolve(true);
+    };
+
+    this.#page._client().on('Page.frameStartedNavigating', navigationListener);
+    navigationAbortController.signal.addEventListener('abort', () => {
+      this.#page
+        ._client()
+        .off('Page.frameStartedNavigating', navigationListener);
+    });
+    this.#abortController.signal.addEventListener(
+      'abort',
+      () => {
+        navigationStartedResolvers.resolve(false);
+        navigationAbortController.abort();
+      },
+      {signal: navigationAbortController.signal},
+    );
+
+    // Puppeteer's waitForNavigation must be started before the action runs so that
+    // it captures the pre-action loader ID. If started after the action triggers navigation,
+    // it risks recording the new loader ID and hanging until timeout.
+    // If no navigation occurs, this.#abortController will cancel it in the finally block.
+    const navigationFinished = this.#page
+      .waitForNavigation({
+        timeout: options?.timeout ?? this.#navigationTimeout,
+        signal: this.#abortController.signal,
+        ignoreSameDocumentNavigation: true,
       })
-      .catch(error => logger?.(error));
+      .then(result => {
+        navigationStartedResolvers.resolve(true);
+        return result;
+      })
+      .catch(error => {
+        if (
+          this.#abortController.signal.aborted ||
+          (error instanceof Error && error.name === 'AbortError')
+        ) {
+          return;
+        }
+        logger?.(error);
+      });
 
     try {
       await action();
@@ -190,16 +225,33 @@ export class WaitForHelper {
       throw error;
     }
 
-    try {
-      await navigationFinished;
+    const expectNavigationIn =
+      options?.expectNavigationIn ?? this.#expectNavigationIn;
+    const navigationStarted = await Promise.race([
+      navigationStartedResolvers.promise,
+      this.timeout(expectNavigationIn).then(() => {
+        navigationStartedResolvers.resolve(false);
+        return false;
+      }),
+    ]);
+    navigationAbortController.abort();
 
-      if (this.#dialogOpened) {
+    try {
+      // Only await navigation if one was actually initiated; otherwise, the
+      // pending waitForNavigation promise will be cancelled when this.#abortController aborts.
+      if (navigationStarted) {
+        await navigationFinished;
+      }
+
+      if (this.#dialogDetected) {
         return this.#getResult();
       }
 
       // Wait for stable dom after navigation so we execute in
       // the correct context
-      await this.waitForStableDom();
+      if (options?.waitForStableDom !== false) {
+        await this.waitForStableDom();
+      }
     } catch (error) {
       logger?.(error);
     } finally {
@@ -215,7 +267,7 @@ export class WaitForHelper {
       ...(urlAfterAction !== this.#initialUrl
         ? {navigatedToUrl: urlAfterAction}
         : {}),
-      dialogHandled: this.#dialogOpened,
+      dialogHandled: this.#dialogHandled,
     };
   }
 }

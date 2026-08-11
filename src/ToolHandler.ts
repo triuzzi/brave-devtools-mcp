@@ -6,19 +6,24 @@
 
 import type {parseArguments} from './bin/brave-devtools-mcp-cli-options.js';
 import type {McpContext} from './McpContext.js';
+import type {McpPage} from './McpPage.js';
 import type {DataFormat} from './McpResponse.js';
 import {McpResponse} from './McpResponse.js';
 import {SlimMcpResponse} from './SlimMcpResponse.js';
 import {ClearcutLogger} from './telemetry/ClearcutLogger.js';
-import {bucketizeLatency} from './telemetry/transformation.js';
+import {bucketizeLatency, buildContext} from './telemetry/transformation.js';
 import type {CallToolResult} from './third_party/index.js';
 import {zod} from './third_party/index.js';
 import type {ToolCategory} from './tools/categories.js';
 import {labels, OFF_BY_DEFAULT_CATEGORIES} from './tools/categories.js';
-import type {DefinedPageTool, ToolDefinition} from './tools/ToolDefinition.js';
+import type {
+  DefinedPageTool,
+  DevToolsData,
+  ToolDefinition,
+} from './tools/ToolDefinition.js';
 import {pageIdSchema} from './tools/ToolDefinition.js';
 import {logger} from './utils/logger.js';
-import type {Mutex} from './utils/Mutex.js';
+import type {Mutex} from './third_party/index.js';
 
 export function buildFlag(category: ToolCategory) {
   return `category${category.charAt(0).toUpperCase() + category.slice(1)}`;
@@ -33,7 +38,7 @@ function buildDisabledMessage(
     ? `is in category ${categoryLabel} which`
     : `requires experimental feature ${flag} and`;
 
-  return `Tool ${toolName} ${reason} is currently disabled. Enable it by running chrome-devtools start ${flag}=true. For more information check the README.`;
+  return `Tool ${toolName} ${reason} is currently disabled. Enable it by running brave-devtools start ${flag}=true. For more information check the README.`;
 }
 
 function getCategoryStatus(
@@ -208,6 +213,8 @@ export class ToolHandler {
     const guard = await this.toolMutex.acquire();
     const startTime = Date.now();
     let success = false;
+    let devToolsData: DevToolsData | undefined;
+    let pageUrl: string | undefined;
     try {
       logger?.(
         `${this.tool.name} request: ${JSON.stringify(params, null, '  ')}`,
@@ -222,17 +229,21 @@ export class ToolHandler {
       if (context.consumeReconnectNotice()) {
         response.setReconnectNotice();
       }
+      let page: McpPage | undefined;
       try {
         if (this.tool.verifyFilesSchema) {
           for (const key of this.tool.verifyFilesSchema) {
             const filePath = params[key];
-            await context.validatePath(filePath as string);
+            const paths = Array.isArray(filePath) ? filePath : [filePath];
+            for (const path of paths) {
+              await context.validatePath(path as string);
+            }
           }
         }
         if (isPageScopedTool(this.tool)) {
           const pageId =
             typeof params.pageId === 'number' ? params.pageId : undefined;
-          const page =
+          page =
             this.serverArgs.experimentalPageIdRouting &&
             pageId !== undefined &&
             !this.serverArgs.slim
@@ -262,6 +273,11 @@ export class ToolHandler {
       } catch (err) {
         response.setError(err);
       }
+      devToolsData = await context.getDevToolsData(page);
+      const targetPage = page ?? context.getSelectedMcpPage();
+      if (targetPage?.pptrPage?.isClosed() === false) {
+        pageUrl = targetPage.pptrPage.url();
+      }
       // Resolve data format: --experimentalDataFormat takes precedence, fall back to legacy --experimentalToonFormat
       let dataFormat: DataFormat = 'default';
       if (this.serverArgs.experimentalDataFormat) {
@@ -271,7 +287,6 @@ export class ToolHandler {
       }
 
       const {content, structuredContent} = await response.handle(
-        this.tool.name,
         context,
         dataFormat,
       );
@@ -304,14 +319,16 @@ export class ToolHandler {
         isError: true,
       };
     } finally {
+      const context = buildContext(devToolsData, pageUrl);
       void ClearcutLogger.get()?.logToolInvocation({
         toolName: this.tool.name,
         params,
         schema: this.inputSchema,
         success,
         latencyMs: bucketizeLatency(Date.now() - startTime),
+        context,
       });
-      guard.dispose();
+      guard[Symbol.dispose]();
     }
   }
 }

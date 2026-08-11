@@ -33,7 +33,7 @@ export async function checkForUpdates(message: string) {
   const cachePath = path.join(
     os.homedir(),
     '.cache',
-    'brave-devtools-mcp',
+    'brave-mcp',
     'latest.json',
   );
 

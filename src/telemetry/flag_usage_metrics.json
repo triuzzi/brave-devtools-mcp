@@ -327,14 +327,6 @@
     "flagType": "boolean"
   },
   {
-    "name": "brave_arg_present",
-    "flagType": "boolean"
-  },
-  {
-    "name": "ignore_default_brave_arg_present",
-    "flagType": "boolean"
-  },
-  {
     "name": "screenshot_format_present",
     "flagType": "boolean"
   },
@@ -380,6 +372,22 @@
   },
   {
     "name": "allow_unrestricted_paths",
+    "flagType": "boolean"
+  },
+  {
+    "name": "category_pwa_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "category_pwa",
+    "flagType": "boolean"
+  },
+  {
+    "name": "brave_arg_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "ignore_default_brave_arg_present",
     "flagType": "boolean"
   }
 ]

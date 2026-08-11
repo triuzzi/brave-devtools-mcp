@@ -2,33 +2,29 @@
 
 ## General tips
 
-- Run `npx chrome-devtools-mcp@latest --help` to test if the MCP server runs on your machine.
+- Run `npx brave-mcp@latest --help` to test if the MCP server runs on your machine.
 - Make sure that your MCP client uses the same npm and node version as your terminal.
 - When configuring your MCP client, try using the `--yes` argument to `npx` to
   auto-accept installation prompt.
-- Find a specific error in the output of the `chrome-devtools-mcp` server.
+- Find a specific error in the output of the `brave-mcp` server.
   Usually, if your client is an IDE, logs would be in the Output pane.
-- Search the [GitHub repository issues and discussions](https://github.com/ChromeDevTools/chrome-devtools-mcp) for help or existing similar problems.
+- Search the [GitHub repository issues and discussions](https://github.com/triuzzi/brave-devtools-mcp) for help or existing similar problems.
 
 ## Debugging
 
 Start the MCP server with debugging enabled and a log file:
 
-- `DEBUG=* npx chrome-devtools-mcp@latest --log-file=/path/to/chrome-devtools-mcp.log`
+- `DEBUG=* npx brave-mcp@latest --log-file=/path/to/brave-mcp.log`
 
 Using `.mcp.json` to debug while using a client:
 
 ```json
 {
   "mcpServers": {
-    "chrome-devtools": {
+    "brave-devtools": {
       "type": "stdio",
       "command": "npx",
-      "args": [
-        "chrome-devtools-mcp@latest",
-        "--log-file",
-        "/path/to/chrome-devtools-mcp.log"
-      ],
+      "args": ["brave-mcp@latest", "--log-file", "/path/to/brave-mcp.log"],
       "env": {
         "DEBUG": "*"
       }
@@ -43,7 +39,7 @@ Using `.mcp.json` to debug while using a client:
 
 This usually indicates either a non-supported Node version is in use or that the
 `npm`/`npx` cache is corrupted. Try clearing the cache, uninstalling
-`chrome-devtools-mcp` and installing it again. Clear the cache by running:
+`brave-mcp` and installing it again. Clear the cache by running:
 
 ```sh
 rm -rf ~/.npm/_npx # NOTE: this might remove other installed npx executables.
@@ -75,40 +71,38 @@ Point the MCP connection inside the VM to `http://127.0.0.1:9222`. This allows D
 ### Operating system sandboxes
 
 Some MCP clients allow sandboxing the MCP server using macOS Seatbelt or Linux
-containers. If sandboxes are enabled, `chrome-devtools-mcp` is not able to start
-Chrome that requires permissions to create its own sandboxes. As a workaround,
-either disable sandboxing for `chrome-devtools-mcp` in your MCP client or use
-`--browser-url` to connect to a Chrome instance that you start manually outside
+containers. If sandboxes are enabled, `brave-mcp` is not able to start
+Brave, which requires permissions to create its own sandboxes. As a workaround,
+either disable sandboxing for `brave-mcp` in your MCP client or use
+`--browser-url` to connect to a Brave instance that you start manually outside
 of the MCP client sandbox.
 
 ### WSL
 
-By default, `chrome-devtools-mcp` in WSL requires Chrome to be installed within the Linux environment. While it normally attempts to launch Chrome on the Windows side, this currently fails due to a [known WSL issue](https://github.com/microsoft/WSL/issues/14201). Ensure you are using a [Linux distribution compatible with Chrome](https://support.google.com/chrome/a/answer/7100626).
+By default, `brave-mcp` in WSL requires Brave to be installed within the Linux environment.
 
 Possible workarounds include:
 
-- **Install Google Chrome in WSL:**
-  - `wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb`
-  - `sudo dpkg -i google-chrome-stable_current_amd64.deb`
+- **Install Brave in WSL:** follow the [official Linux installation instructions](https://brave.com/linux/).
 
 - **Use Mirrored networking:**
   1. Configure [Mirrored networking for WSL](https://learn.microsoft.com/en-us/windows/wsl/networking).
-  2. Start Chrome on the Windows side with:
-     `chrome.exe --remote-debugging-port=9222 --user-data-dir=C:\path\to\dir`
-  3. Start `chrome-devtools-mcp` with:
-     `npx chrome-devtools-mcp --browser-url http://127.0.0.1:9222`
+  2. Start Brave on the Windows side with:
+     `"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" --remote-debugging-port=9222 --user-data-dir=C:\path\to\dir`
+  3. Start `brave-mcp` with:
+     `npx brave-mcp --browser-url http://127.0.0.1:9222`
 
 - **Use PowerShell or Git Bash** instead of WSL.
 
-### Windows 10: Error during discovery for MCP server 'chrome-devtools': MCP error -32000: Connection closed
+### Windows 10: Error during discovery for MCP server 'brave-devtools': MCP error -32000: Connection closed
 
 - **Solution 1** Call using `cmd` (For more info https://github.com/modelcontextprotocol/servers/issues/1082#issuecomment-2791786310)
 
   ```json
   "mcpServers": {
-      "chrome-devtools": {
+      "brave-devtools": {
         "command": "cmd",
-        "args": ["/c", "npx", "-y", "chrome-devtools-mcp@latest"]
+        "args": ["/c", "npx", "-y", "brave-mcp@latest"]
       }
     }
   ```
@@ -119,24 +113,24 @@ Possible workarounds include:
   > Note: The path below is an example. You must adjust it to match the actual location of `npx` on your machine. Depending on your setup, the file extension might be `.cmd`, `.bat`, or `.exe` rather than `.ps1`. Also, ensure you use double backslashes (`\\`) as path delimiters, as required by the JSON format.
   ```json
   "mcpServers": {
-      "chrome-devtools": {
+      "brave-devtools": {
         "command": "C:\\nvm4w\\nodejs\\npx.ps1",
-        "args": ["-y", "chrome-devtools-mcp@latest"]
+        "args": ["-y", "brave-mcp@latest"]
       }
     }
   ```
 
 ### Claude Code plugin installation fails with `Failed to clone repository`
 
-When installing `chrome-devtools-mcp` as a Claude Code plugin (either from the
+When installing `brave-mcp` as a Claude Code plugin (either from the
 official marketplace or via `/plugin marketplace add`), the installation may fail
 with a timeout error if your environment cannot reach `github.com` on port 443
 (HTTPS):
 
 ```
-Failed to download/cache plugin chrome-devtools-mcp: Failed to clone repository:
+Failed to download/cache plugin brave-mcp: Failed to clone repository:
   Cloning into '...'...
-  fatal: unable to access 'https://github.com/ChromeDevTools/chrome-devtools-mcp.git/':
+  fatal: unable to access 'https://github.com/triuzzi/brave-devtools-mcp.git/':
   Failed to connect to github.com port 443
 ```
 
@@ -157,11 +151,11 @@ GitHub operations instead of HTTPS.
 
 **Workaround 2: Install via CLI instead**
 
-If the plugin marketplace approach fails, you can install `chrome-devtools-mcp`
+If the plugin marketplace approach fails, you can install `brave-mcp`
 as an MCP server directly without cloning the repository:
 
 ```sh
-claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest
+claude mcp add brave-devtools --scope user npx brave-mcp@latest
 ```
 
 This bypasses the git clone entirely and uses npm/npx to fetch the package. Note
@@ -169,15 +163,15 @@ that this method installs only the MCP server without the bundled skills.
 
 ### Connection timeouts with `--autoConnect`
 
-If you are using the `--autoConnect` flag and tools like `list_pages`, `new_page`, or `navigate_page` fail with a timeout (e.g., `ProtocolError: Network.enable timed out` or `The socket connection was closed unexpectedly`), this usually means the MCP server cannot handshake with the running Chrome instance correctly. Ensure:
+If you are using the `--autoConnect` flag and tools like `list_pages`, `new_page`, or `navigate_page` fail with a timeout (e.g., `ProtocolError: Network.enable timed out` or `The socket connection was closed unexpectedly`), this usually means the MCP server cannot handshake with the running Brave instance correctly. Ensure:
 
 1. Chrome 144+ is **already** running.
-2. Remote debugging is enabled in Chrome via `chrome://inspect/#remote-debugging`.
+2. Remote debugging is enabled in Chrome via `brave://inspect/#remote-debugging`.
 3. You have allowed the remote debugging connection prompt in the browser.
 4. There is no other MCP server or tool trying to connect to the same debugging port.
 
 > [!IMPORTANT]
 > In Chrome versions up to 149, connection issues may be caused by frozen or unloaded tabs.
-> Chrome DevTools MCP forces all tabs to be loaded, so ensure your system has sufficient resources.
-> It is currently not recommended to use Chrome DevTools MCP with browser instances running hundreds of tabs.
-> See [Issue #1921](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/1921) for more details.
+> Brave DevTools MCP forces all tabs to be loaded, so ensure your system has sufficient resources.
+> It is currently not recommended to use Brave DevTools MCP with browser instances running hundreds of tabs.
+> See [upstream issue #1921](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/1921) for more details.

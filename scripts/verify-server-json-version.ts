@@ -11,6 +11,32 @@ import path from 'node:path';
 
 const serverJsonFilePath = path.join(process.cwd(), 'server.json');
 const serverJson = JSON.parse(fs.readFileSync(serverJsonFilePath, 'utf-8'));
+const packageJsonFilePath = path.join(process.cwd(), 'package.json');
+const packageJson = JSON.parse(fs.readFileSync(packageJsonFilePath, 'utf-8'));
+
+if (serverJson.name !== packageJson.mcpName) {
+  throw new Error(
+    `server.json name ${serverJson.name} does not match package.json mcpName ${packageJson.mcpName}`,
+  );
+}
+if (serverJson.version !== packageJson.version) {
+  throw new Error(
+    `server.json version ${serverJson.version} does not match package.json version ${packageJson.version}`,
+  );
+}
+if (serverJson.packages.length !== 1) {
+  throw new Error('server.json must contain exactly one package');
+}
+if (serverJson.packages[0].identifier !== packageJson.name) {
+  throw new Error(
+    `server.json package ${serverJson.packages[0].identifier} does not match package.json name ${packageJson.name}`,
+  );
+}
+if (serverJson.packages[0].version !== packageJson.version) {
+  throw new Error(
+    `server.json package version ${serverJson.packages[0].version} does not match package.json version ${packageJson.version}`,
+  );
+}
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-verify-'));
 

@@ -520,7 +520,7 @@ async function generateToolDocumentation(): Promise<void> {
       const {toolsWithAnnotations, categories, sortedCategories} =
         getToolsAndCategories(createTools({slim: false} as ParsedArguments));
       await generateReference(
-        'Chrome DevTools MCP Tool Reference',
+        'Brave DevTools MCP Tool Reference',
         OUTPUT_PATH,
         toolsWithAnnotations,
         categories,
@@ -536,7 +536,7 @@ async function generateToolDocumentation(): Promise<void> {
       const {toolsWithAnnotations, categories, sortedCategories} =
         getToolsAndCategories(createTools({slim: true} as ParsedArguments));
       await generateReference(
-        'Chrome DevTools MCP Slim Tool Reference',
+        'Brave DevTools MCP Slim Tool Reference',
         SLIM_OUTPUT_PATH,
         toolsWithAnnotations,
         categories,
