@@ -9,30 +9,54 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import type {
-  Browser,
-  ChromeReleaseChannel,
-  LaunchOptions,
-  Target,
-} from './third_party/index.js';
+import type {Browser, LaunchOptions, Target} from './third_party/index.js';
 import {puppeteer} from './third_party/index.js';
 import {logger} from './utils/logger.js';
 
 let browser: Browser | undefined;
 let browserMode: 'launched' | 'connected' | undefined;
 
+export type Channel = 'release' | 'beta' | 'nightly';
+
+// Heavy pages (e.g. Studio module dev bundles >100MB) cannot ack
+// `Network.enable` and other auto-attached domain calls within
+// puppeteer's default 180s. Once that fires, the CDP connection is
+// marked dead and every subsequent call throws — only daemon restart
+// recovers. Bumping the ceiling to 10min covers realistic loads;
+// override via env for power users.
+const PROTOCOL_TIMEOUT_MILLISECONDS = Number(
+  process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS ?? '600000',
+);
+if (
+  !Number.isSafeInteger(PROTOCOL_TIMEOUT_MILLISECONDS) ||
+  PROTOCOL_TIMEOUT_MILLISECONDS <= 0
+) {
+  throw new Error(
+    'BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer.',
+  );
+}
+
 function makeTargetFilter(enableExtensions = false) {
-  const ignoredPrefixes = new Set(['chrome://', 'chrome-untrusted://']);
+  const ignoredPrefixes = new Set([
+    'chrome://',
+    'chrome-untrusted://',
+    'brave://',
+  ]);
   if (!enableExtensions) {
     ignoredPrefixes.add('chrome-extension://');
   }
 
   return function targetFilter(target: Target): boolean {
-    if (target.url() === 'chrome://newtab/') {
+    if (
+      target.url() === 'brave://newtab/' ||
+      target.url() === 'chrome://newtab/'
+    ) {
       return true;
     }
-    // Could be the only page opened in the browser.
-    if (target.url().startsWith('chrome://inspect')) {
+    if (
+      target.url().startsWith('brave://inspect') ||
+      target.url().startsWith('chrome://inspect')
+    ) {
       return true;
     }
     for (const prefix of ignoredPrefixes) {
@@ -42,6 +66,197 @@ function makeTargetFilter(enableExtensions = false) {
     }
     return true;
   };
+}
+
+function resolveBraveExecutablePath(channel?: Channel): string {
+  const envPath = process.env['BRAVE_PATH'];
+  if (envPath) {
+    if (!fs.existsSync(envPath)) {
+      throw new Error(
+        `BRAVE_PATH points to ${envPath} but that file does not exist.`,
+      );
+    }
+    return envPath;
+  }
+
+  const platform = os.platform();
+
+  if (platform === 'darwin') {
+    const paths: Record<Channel, string> = {
+      release: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+      beta: '/Applications/Brave Browser Beta.app/Contents/MacOS/Brave Browser Beta',
+      nightly:
+        '/Applications/Brave Browser Nightly.app/Contents/MacOS/Brave Browser Nightly',
+    };
+    const resolved = paths[channel ?? 'release'];
+    if (fs.existsSync(resolved)) {
+      return resolved;
+    }
+    throw new Error(
+      `Could not find Brave Browser (${channel ?? 'release'}) at ${resolved}. Install Brave or set the BRAVE_PATH environment variable.`,
+    );
+  }
+
+  if (platform === 'linux') {
+    const paths: Record<Channel, string[]> = {
+      release: ['brave-browser', 'brave-browser-stable'],
+      beta: ['brave-browser-beta'],
+      nightly: ['brave-browser-nightly'],
+    };
+    const candidates = paths[channel ?? 'release'];
+    for (const candidate of candidates) {
+      try {
+        const resolvedPath = execSync(`which ${candidate}`, {
+          encoding: 'utf8',
+        }).trim();
+        if (resolvedPath) {
+          return resolvedPath;
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+    throw new Error(
+      `Could not find Brave Browser (${channel ?? 'release'}) in PATH. Install Brave or set the BRAVE_PATH environment variable.`,
+    );
+  }
+
+  if (platform === 'win32') {
+    const programFiles = process.env['PROGRAMFILES'] ?? 'C:\\Program Files';
+    const localAppData = process.env['LOCALAPPDATA'] ?? '';
+    const paths: Record<Channel, string[]> = {
+      release: [
+        path.join(
+          programFiles,
+          'BraveSoftware',
+          'Brave-Browser',
+          'Application',
+          'brave.exe',
+        ),
+        path.join(
+          localAppData,
+          'BraveSoftware',
+          'Brave-Browser',
+          'Application',
+          'brave.exe',
+        ),
+      ],
+      beta: [
+        path.join(
+          programFiles,
+          'BraveSoftware',
+          'Brave-Browser-Beta',
+          'Application',
+          'brave.exe',
+        ),
+        path.join(
+          localAppData,
+          'BraveSoftware',
+          'Brave-Browser-Beta',
+          'Application',
+          'brave.exe',
+        ),
+      ],
+      nightly: [
+        path.join(
+          programFiles,
+          'BraveSoftware',
+          'Brave-Browser-Nightly',
+          'Application',
+          'brave.exe',
+        ),
+        path.join(
+          localAppData,
+          'BraveSoftware',
+          'Brave-Browser-Nightly',
+          'Application',
+          'brave.exe',
+        ),
+      ],
+    };
+    const candidates = paths[channel ?? 'release'];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    throw new Error(
+      `Could not find Brave Browser (${channel ?? 'release'}). Install Brave or set the BRAVE_PATH environment variable.`,
+    );
+  }
+
+  throw new Error(`Unsupported platform: ${platform}`);
+}
+
+function resolveBraveUserDataDir(channel?: Channel): string {
+  const platform = os.platform();
+  const home = os.homedir();
+
+  if (platform === 'darwin') {
+    const dirs: Record<Channel, string> = {
+      release: path.join(
+        home,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser',
+      ),
+      beta: path.join(
+        home,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser-Beta',
+      ),
+      nightly: path.join(
+        home,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser-Nightly',
+      ),
+    };
+    return dirs[channel ?? 'release'];
+  }
+
+  if (platform === 'linux') {
+    const configDir =
+      process.env['XDG_CONFIG_HOME'] ?? path.join(home, '.config');
+    const dirs: Record<Channel, string> = {
+      release: path.join(configDir, 'BraveSoftware', 'Brave-Browser'),
+      beta: path.join(configDir, 'BraveSoftware', 'Brave-Browser-Beta'),
+      nightly: path.join(configDir, 'BraveSoftware', 'Brave-Browser-Nightly'),
+    };
+    return dirs[channel ?? 'release'];
+  }
+
+  if (platform === 'win32') {
+    const localAppData =
+      process.env['LOCALAPPDATA'] ?? path.join(home, 'AppData', 'Local');
+    const dirs: Record<Channel, string> = {
+      release: path.join(
+        localAppData,
+        'BraveSoftware',
+        'Brave-Browser',
+        'User Data',
+      ),
+      beta: path.join(
+        localAppData,
+        'BraveSoftware',
+        'Brave-Browser-Beta',
+        'User Data',
+      ),
+      nightly: path.join(
+        localAppData,
+        'BraveSoftware',
+        'Brave-Browser-Nightly',
+        'User Data',
+      ),
+    };
+    return dirs[channel ?? 'release'];
+  }
+
+  throw new Error(`Unsupported platform: ${platform}`);
 }
 
 export async function ensureBrowserConnected(options: {
@@ -64,6 +279,7 @@ export async function ensureBrowserConnected(options: {
     targetFilter: makeTargetFilter(enableExtensions),
     defaultViewport: null,
     handleDevToolsAsPage: true,
+    protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
     blocklist: options.blocklist,
     allowlist: options.allowlist,
   };
@@ -77,45 +293,35 @@ export async function ensureBrowserConnected(options: {
   } else if (options.browserURL) {
     connectOptions.browserURL = options.browserURL;
   } else if (channel || options.userDataDir) {
-    const userDataDir = options.userDataDir;
-    if (userDataDir) {
-      autoConnect = true;
-      // TODO: re-expose this logic via Puppeteer.
-      const portPath = path.join(userDataDir, 'DevToolsActivePort');
-      try {
-        const fileContent = await fs.promises.readFile(portPath, 'utf8');
-        const [rawPort, rawPath] = fileContent
-          .split('\n')
-          .map(line => {
-            return line.trim();
-          })
-          .filter(line => {
-            return !!line;
-          });
-        if (!rawPort || !rawPath) {
-          throw new Error(`Invalid DevToolsActivePort '${fileContent}' found`);
-        }
-        const port = parseInt(rawPort, 10);
-        if (isNaN(port) || port <= 0 || port > 65535) {
-          throw new Error(`Invalid port '${rawPort}' found`);
-        }
-        const browserWSEndpoint = `ws://127.0.0.1:${port}${rawPath}`;
-        connectOptions.browserWSEndpoint = browserWSEndpoint;
-      } catch (error) {
-        throw new Error(
-          `Could not connect to Chrome in ${userDataDir}. Check if Chrome is running and remote debugging is enabled by going to chrome://inspect/#remote-debugging.`,
-          {
-            cause: error,
-          },
-        );
+    const userDataDir = options.userDataDir ?? resolveBraveUserDataDir(channel);
+    autoConnect = true;
+    const portPath = path.join(userDataDir, 'DevToolsActivePort');
+    try {
+      const fileContent = await fs.promises.readFile(portPath, 'utf8');
+      const [rawPort, rawPath] = fileContent
+        .split('\n')
+        .map(line => {
+          return line.trim();
+        })
+        .filter(line => {
+          return !!line;
+        });
+      if (!rawPort || !rawPath) {
+        throw new Error(`Invalid DevToolsActivePort '${fileContent}' found`);
       }
-    } else {
-      if (!channel) {
-        throw new Error('Channel must be provided if userDataDir is missing');
+      const port = parseInt(rawPort, 10);
+      if (isNaN(port) || port <= 0 || port > 65535) {
+        throw new Error(`Invalid port '${rawPort}' found`);
       }
-      connectOptions.channel = (
-        channel === 'stable' ? 'chrome' : `chrome-${channel}`
-      ) as ChromeReleaseChannel;
+      const browserWSEndpoint = `ws://127.0.0.1:${port}${rawPath}`;
+      connectOptions.browserWSEndpoint = browserWSEndpoint;
+    } catch (error) {
+      throw new Error(
+        `Could not connect to Brave in ${userDataDir}. Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.`,
+        {
+          cause: error,
+        },
+      );
     }
   } else {
     throw new Error(
@@ -127,13 +333,13 @@ export async function ensureBrowserConnected(options: {
   try {
     // Assign mode before browser so a concurrent closeBrowser() never sees
     // `browser` set with `browserMode` still undefined (would fall through
-    // to the disconnect() path and orphan a launched Chrome).
+    // to the disconnect() path and orphan a launched Brave).
     const connected = await puppeteer.connect(connectOptions);
     browserMode = 'connected';
     browser = connected;
   } catch (err) {
     throw new Error(
-      `Could not connect to Chrome. ${autoConnect ? `Check if Chrome is running and remote debugging is enabled by going to chrome://inspect/#remote-debugging.` : `Check if Chrome is running.`}`,
+      `Could not connect to Brave. ${autoConnect ? `Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.` : `Check if Brave is running.`}`,
       {
         cause: err,
       },
@@ -155,8 +361,8 @@ interface McpLaunchOptions {
     width: number;
     height: number;
   };
-  chromeArgs?: string[];
-  ignoreDefaultChromeArgs?: string[];
+  braveArgs?: string[];
+  ignoreDefaultBraveArgs?: string[];
   devtools: boolean;
   enableExtensions?: boolean;
   viaCli?: boolean;
@@ -183,18 +389,21 @@ export function detectDisplay(): void {
 }
 
 export async function launch(options: McpLaunchOptions): Promise<Browser> {
-  const {channel, executablePath, headless, isolated} = options;
+  const {channel, headless, isolated} = options;
   const profileDirName =
-    channel && channel !== 'stable'
-      ? `chrome-profile-${channel}`
-      : 'chrome-profile';
+    channel && channel !== 'release'
+      ? `brave-profile-${channel}`
+      : 'brave-profile';
+
+  const executablePath =
+    options.executablePath ?? resolveBraveExecutablePath(channel);
 
   let userDataDir = options.userDataDir;
   if (!isolated && !userDataDir) {
     userDataDir = path.join(
       os.homedir(),
       '.cache',
-      options.viaCli ? 'chrome-devtools-mcp-cli' : 'chrome-devtools-mcp',
+      options.viaCli ? 'brave-devtools-mcp-cli' : 'brave-devtools-mcp',
       profileDirName,
     );
     await fs.promises.mkdir(userDataDir, {
@@ -203,24 +412,17 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
   }
 
   const args: LaunchOptions['args'] = [
-    ...(options.chromeArgs ?? []),
+    ...(options.braveArgs ?? []),
     '--hide-crash-restore-bubble',
   ];
   const ignoreDefaultArgs: LaunchOptions['ignoreDefaultArgs'] =
-    options.ignoreDefaultChromeArgs ?? false;
+    options.ignoreDefaultBraveArgs ?? false;
 
   if (headless) {
     args.push('--screen-info={3840x2160}');
   }
-  let puppeteerChannel: ChromeReleaseChannel | undefined;
   if (options.devtools) {
     args.push('--auto-open-devtools-for-tabs');
-  }
-  if (!executablePath) {
-    puppeteerChannel =
-      channel && channel !== 'stable'
-        ? (`chrome-${channel}` as ChromeReleaseChannel)
-        : 'chrome';
   }
 
   if (!headless) {
@@ -229,7 +431,6 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
 
   try {
     const browser = await puppeteer.launch({
-      channel: puppeteerChannel,
       targetFilter: makeTargetFilter(options.enableExtensions),
       executablePath,
       defaultViewport: null,
@@ -241,6 +442,7 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
       acceptInsecureCerts: options.acceptInsecureCerts,
       handleDevToolsAsPage: true,
       enableExtensions: options.enableExtensions,
+      protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
       blocklist: options.blocklist,
       allowlist: options.allowlist,
     });
@@ -289,28 +491,26 @@ export async function ensureBrowserLaunched(
 
 /**
  * Shutdown hook for the active browser. Closes a launched browser (so the
- * Chrome subprocess is reaped) or disconnects from an attached browser (so
- * the user's Chrome instance stays alive). No-op if no browser is active or
+ * Brave subprocess is reaped) or disconnects from an attached browser (so
+ * the user's Brave instance stays alive). No-op if no browser is active or
  * the connection has already been dropped. Called from the server entrypoint
  * on stdin EOF / SIGTERM / SIGINT.
  */
 export async function closeBrowser(): Promise<void> {
-  const b = browser;
+  const activeBrowser = browser;
   const mode = browserMode;
   browser = undefined;
   browserMode = undefined;
-  if (!b || !b.connected) {
+  if (!activeBrowser || !activeBrowser.connected) {
     return;
   }
   if (mode === 'launched') {
-    await b.close().catch(err => {
+    await activeBrowser.close().catch(err => {
       logger?.('Failed to close browser', err);
     });
     return;
   }
-  await b.disconnect().catch(err => {
+  await activeBrowser.disconnect().catch(err => {
     logger?.('Failed to disconnect from browser', err);
   });
 }
-
-export type Channel = 'stable' | 'canary' | 'beta' | 'dev';

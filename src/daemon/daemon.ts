@@ -31,7 +31,7 @@ import {
   assertValidSessionId,
 } from './utils.js';
 
-const sessionId = process.env.CHROME_DEVTOOLS_MCP_SESSION_ID || '';
+const sessionId = process.env.BRAVE_DEVTOOLS_MCP_SESSION_ID || '';
 assertValidSessionId(sessionId);
 logger?.(`Daemon sessionId: ${sessionId}`);
 if (isDaemonRunning(sessionId)) {
@@ -129,7 +129,6 @@ let server: Server | null = null;
 async function setupMCPClient() {
   console.log('Setting up MCP client connection...');
 
-  // Create stdio transport for chrome-devtools-mcp
   mcpTransport = new StdioClientTransport({
     command: process.execPath,
     args: [INDEX_SCRIPT_PATH, ...mcpServerArgs],

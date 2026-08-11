@@ -110,13 +110,13 @@ async function profileScenario(
       env[key] = value;
     }
   }
-  env.CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = 'true';
+  env.BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS = 'true';
 
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [
       '--inspect=127.0.0.1:0',
-      path.join(rootDir, 'build/src/bin/chrome-devtools-mcp.js'),
+      path.join(rootDir, 'build/src/bin/brave-devtools-mcp.js'),
       '--headless',
       '--isolated',
     ],

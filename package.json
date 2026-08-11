@@ -1,11 +1,12 @@
 {
-  "name": "chrome-devtools-mcp",
+  "name": "brave-mcp",
   "version": "1.7.0",
-  "description": "MCP server for Chrome DevTools",
+  "description": "MCP server and CLI for Brave DevTools",
   "type": "module",
   "bin": {
-    "chrome-devtools-mcp": "./build/src/bin/chrome-devtools-mcp.js",
-    "chrome-devtools": "./build/src/bin/chrome-devtools.js"
+    "brave-mcp": "./build/src/bin/brave-devtools-mcp.js",
+    "brave-devtools-mcp": "./build/src/bin/brave-devtools-mcp.js",
+    "brave-devtools": "./build/src/bin/brave-devtools.js"
   },
   "main": "./build/src/index.js",
   "scripts": {
@@ -18,14 +19,15 @@
     "check-format": "eslint --cache . && prettier --check --cache .;",
     "gen": "npm run build && npm run docs:generate && npm run cli:generate && npm run update-metrics && npm run format",
     "docs:generate": "node scripts/generate-docs.ts",
-    "start": "npm run build && node build/src/bin/chrome-devtools-mcp.js",
-    "start-debug": "DEBUG=mcp:* DEBUG_COLORS=false npm run build && node build/src/bin/chrome-devtools-mcp.js",
+    "start": "npm run build && node build/src/bin/brave-devtools-mcp.js",
+    "start-debug": "DEBUG=mcp:* DEBUG_COLORS=false npm run build && node build/src/bin/brave-devtools-mcp.js",
     "test": "npm run build && node scripts/test.js --test-skip-pattern=THIRD_PARTY_NOTICES",
     "test:no-build": "node scripts/test.js --test-skip-pattern=THIRD_PARTY_NOTICES",
     "test:notices": "npm run bundle && node scripts/test.js tests/third_party_notices.test.ts",
     "test:notices:no-build": "node scripts/test.js tests/third_party_notices.test.ts",
     "test:only": "npm run build && node scripts/test.js --test-only",
     "test:update-snapshots": "npm run build && node scripts/test.js --test-update-snapshots",
+    "test:brave-live": "npm run build && node scripts/verify-live-brave.mjs",
     "prepare": "node scripts/prepare.ts",
     "sync": "npm ci && git submodule update --init",
     "verify-server-json-version": "node scripts/verify-server-json-version.ts",
@@ -44,14 +46,14 @@
     "!*.tsbuildinfo",
     "!*.js.map"
   ],
-  "repository": "ChromeDevTools/chrome-devtools-mcp",
-  "author": "Google LLC",
+  "repository": "triuzzi/brave-devtools-mcp",
+  "author": "Emanuele Triuzzi",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/issues"
+    "url": "https://github.com/triuzzi/brave-devtools-mcp/issues"
   },
-  "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp#readme",
-  "mcpName": "io.github.ChromeDevTools/chrome-devtools-mcp",
+  "homepage": "https://github.com/triuzzi/brave-devtools-mcp#readme",
+  "mcpName": "io.github.triuzzi/brave-mcp",
   "devDependencies": {
     "@blackwell-systems/gcf": "^2.2.2",
     "@eslint/js": "^10.0.1",

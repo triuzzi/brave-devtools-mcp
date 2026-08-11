@@ -1,11 +1,11 @@
 ---
-name: chrome-devtools
-description: Uses Chrome DevTools via MCP for efficient debugging, troubleshooting and browser automation. Use when debugging web pages, automating browser interactions, analyzing performance, or inspecting network requests. This skill does not apply to `--slim` mode (MCP configuration).
+name: brave-devtools
+description: Uses Brave DevTools via MCP for efficient debugging, troubleshooting and browser automation. Use when debugging web pages, automating browser interactions, analyzing performance, or inspecting network requests. This skill does not apply to `--slim` mode (MCP configuration).
 ---
 
 ## Core Concepts
 
-**Browser lifecycle**: Browser starts automatically on first tool call using a persistent Chrome profile. Configure via CLI args in the MCP server configuration: `npx chrome-devtools-mcp@latest --help`.
+**Browser lifecycle**: Browser starts automatically on first tool call using a persistent Brave profile. Configure via CLI args in the MCP server configuration: `npx brave-mcp@latest --help`.
 Addional tooling can be enabled by providing the following flags:
 
 - For extension tooling, use the `--categoryExtensions` flag.
@@ -46,9 +46,9 @@ You can send multiple tool calls in parallel, but maintain correct order: naviga
 > ```json
 > {
 >   "mcpServers": {
->     "chrome-devtools": {
+>     "brave-devtools": {
 >       "command": "npx",
->       "args": ["chrome-devtools-mcp@latest", "--categoryExtensions"]
+>       "args": ["brave-mcp@latest", "--categoryExtensions"]
 >     }
 >   }
 > }
@@ -64,9 +64,9 @@ You can send multiple tool calls in parallel, but maintain correct order: naviga
 
 ## Troubleshooting
 
-If `chrome-devtools-mcp` is insufficient, guide users to use Chrome DevTools UI:
+If `brave-mcp` is insufficient, guide users to use Brave DevTools UI:
 
 - https://developer.chrome.com/docs/devtools
 - https://developer.chrome.com/docs/devtools/ai-assistance
 
-If there are errors launching `chrome-devtools-mcp` or Chrome, refer to https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/troubleshooting.md.
+If there are errors launching `brave-mcp` or Brave, refer to https://github.com/triuzzi/brave-devtools-mcp/blob/main/docs/troubleshooting.md.

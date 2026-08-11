@@ -38,7 +38,7 @@ const cachePath = process.argv[2];
 
 if (cachePath) {
   try {
-    const response = await fetch(`${getRegistry()}/chrome-devtools-mcp/latest`);
+    const response = await fetch(`${getRegistry()}/brave-mcp/latest`);
     const data = response.ok ? await response.json() : null;
 
     if (

@@ -8,8 +8,8 @@ import fs from 'node:fs';
 
 import type {Tool} from '@modelcontextprotocol/sdk/types.js';
 
-import {cliOptions} from '../build/src/bin/chrome-devtools-mcp-cli-options.js';
-import type {ParsedArguments} from '../build/src/bin/chrome-devtools-mcp-cli-options.js';
+import {cliOptions} from '../build/src/bin/brave-devtools-mcp-cli-options.js';
+import type {ParsedArguments} from '../build/src/bin/brave-devtools-mcp-cli-options.js';
 import {buildFlag} from '../build/src/index.js';
 import {
   ToolCategory,
@@ -520,7 +520,7 @@ async function generateToolDocumentation(): Promise<void> {
       const {toolsWithAnnotations, categories, sortedCategories} =
         getToolsAndCategories(createTools({slim: false} as ParsedArguments));
       await generateReference(
-        'Chrome DevTools MCP Tool Reference',
+        'Brave DevTools MCP Tool Reference',
         OUTPUT_PATH,
         toolsWithAnnotations,
         categories,
@@ -536,7 +536,7 @@ async function generateToolDocumentation(): Promise<void> {
       const {toolsWithAnnotations, categories, sortedCategories} =
         getToolsAndCategories(createTools({slim: true} as ParsedArguments));
       await generateReference(
-        'Chrome DevTools MCP Slim Tool Reference',
+        'Brave DevTools MCP Slim Tool Reference',
         SLIM_OUTPUT_PATH,
         toolsWithAnnotations,
         categories,

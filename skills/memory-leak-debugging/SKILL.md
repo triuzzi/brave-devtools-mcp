@@ -1,15 +1,15 @@
 ---
 name: memory-leak-debugging
-description: Diagnoses and resolves memory leaks in JavaScript/Node.js applications. Use when a user reports high memory usage, OOM errors, or wants to capture, compare, or inspect heap snapshots with Chrome DevTools MCP memory tools.
+description: Diagnoses and resolves memory leaks in JavaScript/Node.js applications. Use when a user reports high memory usage, OOM errors, or wants to capture, compare, or inspect heap snapshots with Brave DevTools MCP memory tools.
 ---
 
 # Memory Leak Debugging
 
-This skill provides expert guidance and workflows for finding, diagnosing, and fixing memory leaks in JavaScript and Node.js applications using Chrome DevTools MCP tools.
+This skill provides expert guidance and workflows for finding, diagnosing, and fixing memory leaks in JavaScript and Node.js applications using Brave DevTools MCP tools.
 
 ## Core Principles
 
-- **Prefer MCP memory tools:** Do NOT attempt to read raw `.heapsnapshot` files directly, as they are extremely large and will consume too many tokens. Use the Chrome DevTools MCP heap snapshot tools to summarize, compare, and inspect snapshots.
+- **Prefer MCP memory tools:** Do NOT attempt to read raw `.heapsnapshot` files directly, as they are extremely large and will consume too many tokens. Use the Brave DevTools MCP heap snapshot tools to summarize, compare, and inspect snapshots.
 - **Isolate the Leak:** Determine if the leak is in the browser (client-side) or Node.js (server-side).
 - **Common Culprits:** Look for detached DOM nodes, unhandled closures, global variables, event listeners not being removed, and caches growing unbounded. _Note: Detached DOM nodes are sometimes intentional caches; always ask the user before nulling them._
 - **Close Loaded Snapshots:** Heap snapshots can be large. After completing an investigation, use `close_heapsnapshot` for each loaded snapshot to release memory held by the MCP server.
@@ -18,7 +18,7 @@ This skill provides expert guidance and workflows for finding, diagnosing, and f
 
 ### 1. Capturing Snapshots
 
-When investigating a frontend web application memory leak, utilize the `chrome-devtools-mcp` tools to interact with the application and take snapshots.
+When investigating a frontend web application memory leak, utilize the `brave-mcp` tools to interact with the application and take snapshots.
 
 - Use tools like `click`, `navigate_page`, `fill`, etc., to manipulate the page into the desired state.
 - Revert the page back to the original state after interactions to see if memory is released.
@@ -27,7 +27,7 @@ When investigating a frontend web application memory leak, utilize the `chrome-d
 
 ### 2. Comparing Snapshots
 
-Once you have generated `.heapsnapshot` files using `take_heapsnapshot`, compare them with Chrome DevTools MCP memory tools.
+Once you have generated `.heapsnapshot` files using `take_heapsnapshot`, compare them with Brave DevTools MCP memory tools.
 
 - Start with `get_heapsnapshot_summary` for each snapshot to confirm that the files load and to compare high-level totals.
 - Use `compare_heapsnapshots` to compare baseline and target snapshots. Start without `classIndex` for the summary diff, then request detailed class diffs only for suspicious growth by specifying `classIndex`.

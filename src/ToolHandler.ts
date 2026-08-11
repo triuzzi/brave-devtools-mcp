@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {parseArguments} from './bin/chrome-devtools-mcp-cli-options.js';
+import type {parseArguments} from './bin/brave-devtools-mcp-cli-options.js';
 import type {McpContext} from './McpContext.js';
 import type {McpPage} from './McpPage.js';
 import type {DataFormat} from './McpResponse.js';
@@ -38,7 +38,7 @@ function buildDisabledMessage(
     ? `is in category ${categoryLabel} which`
     : `requires experimental feature ${flag} and`;
 
-  return `Tool ${toolName} ${reason} is currently disabled. Enable it by running chrome-devtools start ${flag}=true. For more information check the README.`;
+  return `Tool ${toolName} ${reason} is currently disabled. Enable it by running brave-devtools start ${flag}=true. For more information check the README.`;
 }
 
 function getCategoryStatus(

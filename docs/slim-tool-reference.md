@@ -1,6 +1,6 @@
 <!-- AUTO GENERATED DO NOT EDIT - run 'npm run gen' to update-->
 
-# Chrome DevTools MCP Slim Tool Reference
+# Brave DevTools MCP Slim Tool Reference
 
 - **[Navigation automation](#navigation-automation)** (1 tools)
   - [`navigate`](#navigate)

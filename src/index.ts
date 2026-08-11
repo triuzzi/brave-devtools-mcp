@@ -6,7 +6,7 @@
 
 import type fs from 'node:fs';
 
-import type {parseArguments} from './bin/chrome-devtools-mcp-cli-options.js';
+import type {parseArguments} from './bin/brave-devtools-mcp-cli-options.js';
 import type {Channel} from './browser.js';
 import {ensureBrowserConnected, ensureBrowserLaunched} from './browser.js';
 import {loadIssueDescriptions} from './devtools/issueDescriptions.js';
@@ -48,8 +48,8 @@ export async function createMcpServer(
 
   const server = new McpServer(
     {
-      name: 'chrome_devtools',
-      title: 'Chrome DevTools MCP server',
+      name: 'brave_devtools',
+      title: 'Brave DevTools MCP server',
       version: VERSION,
     },
     {capabilities: {logging: {}}},
@@ -88,7 +88,7 @@ export async function createMcpServer(
       );
     } else if (!serverArgs.allowUnrestrictedPaths) {
       console.warn(
-        '[chrome-devtools-mcp] The connecting client did not negotiate the MCP roots ' +
+        '[brave-devtools-mcp] The connecting client did not negotiate the MCP roots ' +
           'capability. File-writing tools will be restricted to the OS temp directory. ' +
           'To restore the previous unrestricted behavior, start the server with ' +
           '--allow-unrestricted-paths.',
@@ -98,12 +98,12 @@ export async function createMcpServer(
 
   let context: McpContext;
   async function getContext(): Promise<McpContext> {
-    const chromeArgs: string[] = (serverArgs.chromeArg ?? []).map(String);
-    const ignoreDefaultChromeArgs: string[] = (
-      serverArgs.ignoreDefaultChromeArg ?? []
+    const braveArguments: string[] = (serverArgs.braveArg ?? []).map(String);
+    const ignoredDefaultBraveArguments: string[] = (
+      serverArgs.ignoreDefaultBraveArg ?? []
     ).map(String);
     if (serverArgs.proxyServer) {
-      chromeArgs.push(`--proxy-server=${serverArgs.proxyServer}`);
+      braveArguments.push(`--proxy-server=${serverArgs.proxyServer}`);
     }
     const devtools = serverArgs.experimentalDevtools ?? false;
     const blocklist = serverArgs.blockedUrlPattern
@@ -136,8 +136,8 @@ export async function createMcpServer(
             userDataDir: serverArgs.userDataDir,
             logFile: options.logFile,
             viewport: serverArgs.viewport,
-            chromeArgs,
-            ignoreDefaultChromeArgs,
+            braveArgs: braveArguments,
+            ignoreDefaultBraveArgs: ignoredDefaultBraveArguments,
             acceptInsecureCerts: serverArgs.acceptInsecureCerts,
             devtools,
             enableExtensions: serverArgs.categoryExtensions,
@@ -202,7 +202,7 @@ export async function createMcpServer(
 
 export const logDisclaimers = (args: ReturnType<typeof parseArguments>) => {
   console.error(
-    `chrome-devtools-mcp exposes content of the browser instance to the MCP clients allowing them to inspect,
+    `brave-devtools-mcp exposes content of the browser instance to MCP clients, allowing them to inspect,
 debug, and modify any data in the browser or DevTools.
 Avoid sharing sensitive or personal information that you do not want to share with MCP clients.`,
   );
@@ -214,10 +214,6 @@ Avoid sharing sensitive or personal information that you do not want to share wi
   }
 
   if (!args.slim && args.usageStatistics) {
-    console.error(
-      `
-Google collects usage statistics to improve Chrome DevTools MCP. To opt-out, run with --no-usage-statistics.
-For more details, visit: https://github.com/ChromeDevTools/chrome-devtools-mcp#usage-statistics`,
-    );
+    console.error('\nUsage statistics collection is enabled.');
   }
 };
