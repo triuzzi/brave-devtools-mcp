@@ -13,10 +13,10 @@ The workflow below works for most users. See [Troubleshooting: DevTools is not d
    ```
 5. Configure your MCP server to connect to the Chrome
    ```json
-   "chrome-devtools": {
+   "brave-devtools": {
      "command": "npx",
      "args": [
-       "chrome-devtools-mcp@latest",
+       "brave-mcp@latest",
        "--wsEndpoint=ws://127.0.0.1:9222/devtools/browser/"
      ],
      "trust": true
@@ -27,4 +27,4 @@ The workflow below works for most users. See [Troubleshooting: DevTools is not d
    Check the performance of developers.chrome.com
    ```
 
-The Chrome DevTools MCP server should now control Chrome on your Android device.
+The Brave DevTools MCP server should now control Chrome on your Android device.

@@ -13,7 +13,7 @@ import path from 'node:path';
 import process from 'node:process';
 import {afterEach, beforeEach, describe, it} from 'node:test';
 
-import type {ParsedArguments} from '../../src/bin/chrome-devtools-mcp-cli-options.js';
+import type {ParsedArguments} from '../../src/bin/brave-devtools-mcp-cli-options.js';
 import {
   serializeArgs,
   assertValidSessionId,
@@ -26,7 +26,7 @@ import {
 } from '../../src/daemon/utils.js';
 import type {YargsOptions} from '../../src/third_party/index.js';
 
-const APP_NAME = 'chrome-devtools-mcp';
+const APP_NAME = 'brave-devtools-mcp';
 const SESSION_ID = 'aabbccdd-1122-3344-5566-77889900aabb';
 
 describe('assertValidSessionId', () => {
@@ -90,10 +90,10 @@ describe('serializeArgs', () => {
   });
 
   it('should handle array values including hyphenated flags', () => {
-    const options: Record<string, YargsOptions> = {foo: {}, chromeArg: {}};
+    const options: Record<string, YargsOptions> = {foo: {}, braveArg: {}};
     const argv = {
       foo: ['val1', 'val2'],
-      chromeArg: [
+      braveArg: [
         '--use-fake-device-for-media-stream',
         '--use-file-for-fake-audio-capture=/tmp/test.wav',
       ],
@@ -104,8 +104,8 @@ describe('serializeArgs', () => {
     assert.deepStrictEqual(result, [
       '--foo=val1',
       '--foo=val2',
-      '--chrome-arg=--use-fake-device-for-media-stream',
-      '--chrome-arg=--use-file-for-fake-audio-capture=/tmp/test.wav',
+      '--brave-arg=--use-fake-device-for-media-stream',
+      '--brave-arg=--use-file-for-fake-audio-capture=/tmp/test.wav',
     ]);
   });
 

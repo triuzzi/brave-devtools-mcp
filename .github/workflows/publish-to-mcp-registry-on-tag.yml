@@ -3,8 +3,9 @@ name: publish-to-mcp-registry-on-tag
 on:
   push:
     tags:
-      - 'chrome-devtools-mcp-v*'
+      - 'v*'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

@@ -1,11 +1,11 @@
 {
-  "name": "chrome-devtools-mcp",
+  "name": "brave-devtools-mcp",
   "version": "1.7.0",
   "mcpServers": {
-    "chrome-devtools": {
+    "brave-devtools": {
       "command": "npx",
       "args": [
-        "chrome-devtools-mcp@1.7.0"
+        "brave-mcp@1.7.0"
       ]
     }
   }

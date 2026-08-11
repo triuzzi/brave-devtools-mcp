@@ -10,7 +10,7 @@ import {before, describe, it} from 'node:test';
 
 import type {Dialog} from 'puppeteer-core';
 
-import type {ParsedArguments} from '../../src/bin/chrome-devtools-mcp-cli-options.js';
+import type {ParsedArguments} from '../../src/bin/brave-devtools-mcp-cli-options.js';
 import {loadIssueDescriptions} from '../../src/devtools/issueDescriptions.js';
 import {McpResponse} from '../../src/McpResponse.js';
 import {TextSnapshot} from '../../src/TextSnapshot.js';
@@ -347,8 +347,8 @@ describe('console', () => {
             page.on('dialog', dialog => resolve(dialog));
           });
 
-          page.evaluate(() => {
-            alert('test dialog');
+          await page.evaluate(() => {
+            setTimeout(() => alert('test dialog'), 0);
           });
           const dialog = await dialogPromise;
 
@@ -694,8 +694,8 @@ describe('console', () => {
         const dialogPromise = new Promise<Dialog>(resolve => {
           page.on('dialog', dialog => resolve(dialog));
         });
-        page.evaluate(() => {
-          alert('test dialog');
+        await page.evaluate(() => {
+          setTimeout(() => alert('test dialog'), 0);
         });
         const dialog = await dialogPromise;
 

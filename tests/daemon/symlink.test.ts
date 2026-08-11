@@ -60,7 +60,7 @@ describe('daemon security checks', () => {
 
     // Try to spawn the daemon
     const child = spawn(process.execPath, [DAEMON_SCRIPT_PATH], {
-      env: {...process.env, CHROME_DEVTOOLS_MCP_SESSION_ID: sessionId},
+      env: {...process.env, BRAVE_DEVTOOLS_MCP_SESSION_ID: sessionId},
     });
 
     const exitCode = await new Promise<number | null>(resolve => {
@@ -104,7 +104,7 @@ describe('daemon security checks', () => {
 
     // Try to spawn the daemon
     const child = spawn(process.execPath, [DAEMON_SCRIPT_PATH], {
-      env: {...process.env, CHROME_DEVTOOLS_MCP_SESSION_ID: sessionId},
+      env: {...process.env, BRAVE_DEVTOOLS_MCP_SESSION_ID: sessionId},
     });
 
     const exitCode = await new Promise<number | null>(resolve => {

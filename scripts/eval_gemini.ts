@@ -17,7 +17,7 @@ import {TestServer} from '../build/tests/server.js';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 const SCENARIOS_DIR = path.join(import.meta.dirname, 'eval_scenarios');
-const SKILL_PATH = path.join(ROOT_DIR, 'skills', 'chrome-devtools', 'SKILL.md');
+const SKILL_PATH = path.join(ROOT_DIR, 'skills', 'brave-devtools', 'SKILL.md');
 
 import type {CapturedFunctionCall, TestScenario} from './eval_result.ts';
 import {Result} from './eval_result.ts';
@@ -89,7 +89,7 @@ async function runSingleScenario(
     // Path to the compiled MCP server
     const serverPath = path.join(
       ROOT_DIR,
-      'build/src/bin/chrome-devtools-mcp.js',
+      'build/src/bin/brave-devtools-mcp.js',
     );
     if (!fs.existsSync(serverPath)) {
       throw new Error(
@@ -104,7 +104,7 @@ async function runSingleScenario(
         env[key] = value;
       }
     });
-    env['CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS'] = 'true';
+    env['BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS'] = 'true';
 
     const args = [serverPath];
     if (!debug) {

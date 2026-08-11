@@ -84,7 +84,8 @@
   },
   {
     "name": "chrome_arg_present",
-    "flagType": "boolean"
+    "flagType": "boolean",
+    "isDeprecated": true
   },
   {
     "name": "experimental_devtools_present",
@@ -132,7 +133,8 @@
   },
   {
     "name": "ignore_default_chrome_arg_present",
-    "flagType": "boolean"
+    "flagType": "boolean",
+    "isDeprecated": true
   },
   {
     "name": "isolated_present",
@@ -378,6 +380,14 @@
   },
   {
     "name": "category_pwa",
+    "flagType": "boolean"
+  },
+  {
+    "name": "brave_arg_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "ignore_default_brave_arg_present",
     "flagType": "boolean"
   }
 ]

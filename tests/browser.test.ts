@@ -16,6 +16,9 @@ import type {Browser} from '../src/third_party/index.js';
 
 import {serverHooks} from './server.js';
 
+const TEST_BROWSER_EXECUTABLE_PATH =
+  process.env.PUPPETEER_EXECUTABLE_PATH ?? (await executablePath());
+
 async function safeClose(browser: Browser) {
   try {
     await Promise.race([
@@ -67,7 +70,7 @@ describe('browser', () => {
         headless: true,
         isolated: false,
         userDataDir: folderPath,
-        executablePath: await executablePath(),
+        executablePath: TEST_BROWSER_EXECUTABLE_PATH,
         devtools: false,
       });
       try {
@@ -76,7 +79,7 @@ describe('browser', () => {
             headless: true,
             isolated: false,
             userDataDir: folderPath,
-            executablePath: await executablePath(),
+            executablePath: TEST_BROWSER_EXECUTABLE_PATH,
             devtools: false,
           });
           await safeClose(browser2);
@@ -104,7 +107,7 @@ describe('browser', () => {
         headless: true,
         isolated: false,
         userDataDir: folderPath,
-        executablePath: await executablePath(),
+        executablePath: TEST_BROWSER_EXECUTABLE_PATH,
         viewport: {
           width: 1501,
           height: 801,
@@ -137,9 +140,9 @@ describe('browser', () => {
         headless: true,
         isolated: false,
         userDataDir: folderPath,
-        executablePath: await executablePath(),
+        executablePath: TEST_BROWSER_EXECUTABLE_PATH,
         devtools: false,
-        chromeArgs: ['--remote-debugging-port=0'],
+        braveArgs: ['--remote-debugging-port=0'],
       });
       try {
         const connectedBrowser = await ensureBrowserConnected({
@@ -172,7 +175,7 @@ describe('browser', () => {
         const browser = await launch({
           headless: true,
           isolated: true,
-          executablePath: await executablePath(),
+          executablePath: TEST_BROWSER_EXECUTABLE_PATH,
           devtools: false,
           blocklist: ['*://*:*/blocked.html'],
         });
@@ -215,7 +218,7 @@ describe('browser', () => {
         const browser = await launch({
           headless: true,
           isolated: true,
-          executablePath: await executablePath(),
+          executablePath: TEST_BROWSER_EXECUTABLE_PATH,
           devtools: false,
           allowlist: ['*://*:*/allowed.html'],
         });

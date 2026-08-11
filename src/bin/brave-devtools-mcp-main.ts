@@ -17,17 +17,15 @@ import {checkForUpdates} from '../utils/check-for-updates.js';
 import {logger, saveLogsToFile} from '../utils/logger.js';
 import {VERSION} from '../version.js';
 
-import {cliOptions, parseArguments} from './chrome-devtools-mcp-cli-options.js';
+import {cliOptions, parseArguments} from './brave-devtools-mcp-cli-options.js';
 
-await checkForUpdates(
-  'Run `npm install chrome-devtools-mcp@latest` to update.',
-);
+await checkForUpdates('Run `npm install brave-mcp@latest` to update.');
 
 export const args = parseArguments(VERSION);
 
 const logFile = args.logFile ? saveLogsToFile(args.logFile) : undefined;
 
-if (process.env['CHROME_DEVTOOLS_MCP_CRASH_ON_UNCAUGHT'] !== 'true') {
+if (process.env['BRAVE_DEVTOOLS_MCP_CRASH_ON_UNCAUGHT'] !== 'true') {
   process.on('unhandledRejection', (reason, promise) => {
     logger?.('Unhandled promise rejection', promise, reason);
   });
@@ -71,13 +69,13 @@ process.on('SIGHUP', () => {
   void shutdown('SIGHUP');
 });
 
-logger?.(`Starting Chrome DevTools MCP Server v${VERSION}`);
+logger?.(`Starting Brave DevTools MCP Server v${VERSION}`);
 const {server} = await createMcpServer(args, {
   logFile,
 });
 const transport = new StdioServerTransport();
 await server.connect(transport);
-logger?.('Chrome DevTools MCP Server connected');
+logger?.('Brave DevTools MCP Server connected');
 logDisclaimers(args);
 void ClearcutLogger.get()?.logDailyActiveIfNeeded();
 void ClearcutLogger.get()?.logServerStart(computeFlagUsage(args, cliOptions));

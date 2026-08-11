@@ -34,9 +34,17 @@ jobs:
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
-      - name: Install browser
+      - name: Install Brave Browser
         shell: bash
-        run: npx puppeteer browsers install chrome
+        run: |
+          sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+            https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/brave-browser-release.list
+          sudo apt-get update
+          sudo apt-get install -y brave-browser
+          echo "BRAVE_PATH=/usr/bin/brave-browser" >> "$GITHUB_ENV"
+          echo "PUPPETEER_EXECUTABLE_PATH=/usr/bin/brave-browser" >> "$GITHUB_ENV"
 
       - name: Build
         run: npm run build

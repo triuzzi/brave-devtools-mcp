@@ -1,6 +1,6 @@
 ---
 name: a11y-debugging
-description: Uses Chrome DevTools MCP for accessibility (a11y) debugging and auditing based on web.dev guidelines. Use when testing semantic HTML, ARIA labels, focus states, keyboard navigation, tap targets, and color contrast.
+description: Uses Brave DevTools MCP for accessibility (a11y) debugging and auditing based on web.dev guidelines. Use when testing semantic HTML, ARIA labels, focus states, keyboard navigation, tap targets, and color contrast.
 ---
 
 ## Core Concepts
@@ -31,7 +31,7 @@ Start by running a Lighthouse accessibility audit to get a comprehensive baselin
 
 ### 2. Browser Issues & Audits
 
-Chrome automatically checks for common accessibility problems. Use `list_console_messages` to check for these native audits:
+Brave automatically checks for common accessibility problems. Use `list_console_messages` to check for these native audits:
 
 - `types`: `["issue"]`
 - `includePreservedMessages`: `true` (to catch issues that occurred during page load)

@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-process.title = 'chrome-devtools';
+process.title = 'brave-devtools';
 
 import process from 'node:process';
 
@@ -30,11 +30,11 @@ import {hideBin, yargs, type CallToolResult} from '../third_party/index.js';
 import {checkForUpdates} from '../utils/check-for-updates.js';
 import {VERSION} from '../version.js';
 
-import {commands} from './chrome-devtools-cli-options.js';
-import {cliOptions, parseArguments} from './chrome-devtools-mcp-cli-options.js';
+import {commands} from './brave-devtools-cli-options.js';
+import {cliOptions, parseArguments} from './brave-devtools-mcp-cli-options.js';
 
 await checkForUpdates(
-  'Run `npm install -g chrome-devtools-mcp@latest` and `chrome-devtools start` to update and restart the daemon.',
+  'Run `npm install -g brave-mcp@latest` and `brave-devtools start` to update and restart the daemon.',
 );
 
 async function start(args: string[], sessionId: string) {
@@ -69,11 +69,11 @@ startCliOptions.categoryExtensions!.default = true;
 
 const y = yargs(hideBin(process.argv))
   .locale('en') // Force English to ensure error string matching works in .fail, all custom messages we output are in English anyways
-  .scriptName('chrome-devtools')
+  .scriptName('brave-devtools')
   .showHelpOnFail(true)
-  .usage('chrome-devtools <command> [...args] --flags')
+  .usage('brave-devtools <command> [...args] --flags')
   .usage(
-    `Run 'chrome-devtools <command> --help' for help on the specific command.`,
+    `Run 'brave-devtools <command> --help' for help on the specific command.`,
   )
   .option('sessionId', {
     type: 'string',
@@ -100,15 +100,15 @@ const y = yargs(hideBin(process.argv))
       ) {
         console.error('\n=========================================');
         console.error('💡 TIP FOR AI AGENT / DEVELOPER:');
-        console.error('In the `chrome-devtools` CLI:');
+        console.error('In the `brave-devtools` CLI:');
         console.error(
           '1. Required parameters MUST be passed as positional arguments (without flags).',
         );
         console.error(
-          '   - INCORRECT: chrome-devtools evaluate_script --expression "() => document.title"',
+          '   - INCORRECT: brave-devtools evaluate_script --expression "() => document.title"',
         );
         console.error(
-          '   - CORRECT:   chrome-devtools evaluate_script "() => document.title"',
+          '   - CORRECT:   brave-devtools evaluate_script "() => document.title"',
         );
         console.error(
           '2. Optional parameters are passed as double-dash options/flags (e.g. --pageId 1).',
@@ -117,7 +117,7 @@ const y = yargs(hideBin(process.argv))
           '3. Make sure to escape quotes properly for your shell environment.',
         );
         console.error(
-          'Run `chrome-devtools <command> --help` to see exact positional and optional parameters.',
+          'Run `brave-devtools <command> --help` to see exact positional and optional parameters.',
         );
         console.error('=========================================');
       }
@@ -129,7 +129,7 @@ const y = yargs(hideBin(process.argv))
 
 y.command(
   'start',
-  'Start or restart chrome-devtools-mcp',
+  'Start or restart brave-devtools-mcp',
   y =>
     y
       .options(startCliOptions)
@@ -142,12 +142,20 @@ y.command(
     if (isDaemonRunning(argv.sessionId)) {
       await stopDaemon(argv.sessionId);
     }
-    // Defaults but we do not want to affect the yargs conflict resolution.
-    if (argv.isolated === undefined && argv.userDataDir === undefined) {
-      argv.isolated = true;
-    }
-    if (argv.headless === undefined) {
-      argv.headless = true;
+    const isAttachMode =
+      argv.browserUrl !== undefined ||
+      argv.wsEndpoint !== undefined ||
+      argv.autoConnect === true;
+    if (isAttachMode) {
+      delete argv.headless;
+      delete argv.isolated;
+    } else {
+      if (argv.isolated === undefined && argv.userDataDir === undefined) {
+        argv.isolated = true;
+      }
+      if (argv.headless === undefined) {
+        argv.headless = true;
+      }
     }
     const args = serializeArgs(cliOptions, argv);
     await start(args, argv.sessionId);
@@ -157,11 +165,11 @@ y.command(
 
 y.command(
   'status',
-  'Checks if chrome-devtools-mcp is running',
+  'Checks if brave-devtools-mcp is running',
   y => y,
   async argv => {
     if (isDaemonRunning(argv.sessionId)) {
-      console.log('chrome-devtools-mcp daemon is running.');
+      console.log('brave-devtools-mcp daemon is running.');
       const response = await sendCommand(
         {
           method: 'status',
@@ -176,7 +184,7 @@ y.command(
         console.log(`args=${JSON.stringify(data.args)}`);
         if (data.version !== VERSION) {
           console.warn(
-            `Warning: Daemon server version (${data.version}) does not match CLI version (${VERSION}). Run 'chrome-devtools start' to update and restart the daemon.`,
+            `Warning: Daemon server version (${data.version}) does not match CLI version (${VERSION}). Run 'brave-devtools start' to update and restart the daemon.`,
           );
         }
       } else {
@@ -184,7 +192,7 @@ y.command(
         process.exit(1);
       }
     } else {
-      console.log('chrome-devtools-mcp daemon is not running.');
+      console.log('brave-devtools-mcp daemon is not running.');
     }
     process.exit(0);
   },
@@ -192,7 +200,7 @@ y.command(
 
 y.command(
   'stop',
-  'Stop chrome-devtools-mcp if any',
+  'Stop brave-devtools-mcp if any',
   y => y,
   async argv => {
     const sessionId = argv.sessionId as string;
