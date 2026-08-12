@@ -121,6 +121,14 @@ export const launchPwa = defineTool({
   handler: async (request, response, context) => {
     const {manifestId, url} = request.params;
     const page = await context.launchPWA({manifestId, url});
+    if (url) {
+      const expectedUrl = new URL(url).href;
+      await page.waitForFunction(
+        requestedUrl => globalThis.location.href === requestedUrl,
+        {timeout: 30_000},
+        expectedUrl,
+      );
+    }
     response.appendResponseLine(
       `Launched PWA with manifest ID: ${manifestId} (${page.url()})`,
     );
