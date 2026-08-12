@@ -6,7 +6,7 @@
 [![npm](https://img.shields.io/npm/v/brave-mcp.svg?logo=npm)](https://www.npmjs.com/package/brave-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/brave-mcp.svg?logo=npm)](https://www.npmjs.com/package/brave-mcp)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-5B5BD6)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.triuzzi%2Fbrave-mcp)
-[![npm provenance](https://img.shields.io/badge/npm-provenance-2E7D32)](https://registry.npmjs.org/-/npm/v1/attestations/brave-mcp@1.7.0)
+[![npm provenance](https://img.shields.io/badge/npm-provenance-2E7D32)](https://registry.npmjs.org/-/npm/v1/attestations/brave-mcp@1.7.1)
 [![upstream](https://img.shields.io/badge/upstream-0%20commits%20behind-brightgreen)](https://github.com/triuzzi/brave-devtools-mcp/compare/ChromeDevTools:main...main)
 [![license](https://img.shields.io/github/license/triuzzi/brave-devtools-mcp)](./LICENSE)
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.1](https://github.com/triuzzi/brave-devtools-mcp/compare/v1.7.0...v1.7.1) (2026-08-12)
+
+### Fixes
+
+* wait for PWA launch to report the resolved Brave URL
+* honor the configured page-navigation timeout
+* retry transient Brave lifecycle test failures in CI
+
+### Upstream sync
+
+* update the DevTools frontend and use its shared string utilities
+
 ## [1.7.0](https://github.com/ChromeDevTools/chrome-devtools-mcp/compare/chrome-devtools-mcp-v1.6.0...chrome-devtools-mcp-v1.7.0) (2026-08-10)
 
 

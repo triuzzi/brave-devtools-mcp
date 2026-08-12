@@ -1,6 +1,6 @@
 {
   "name": "brave-mcp",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "MCP server and CLI for Brave DevTools",
   "type": "module",
   "bin": {
