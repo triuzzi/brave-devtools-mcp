@@ -31,7 +31,10 @@ export class WaitForHelper {
     this.#stableDomTimeout = 3000 * cpuTimeoutMultiplier;
     this.#stableDomFor = 100 * cpuTimeoutMultiplier;
     this.#expectNavigationIn = 100 * cpuTimeoutMultiplier;
-    this.#navigationTimeout = 3000 * networkTimeoutMultiplier;
+    this.#navigationTimeout = Math.max(
+      page.getDefaultNavigationTimeout(),
+      3000 * networkTimeoutMultiplier,
+    );
     this.#page = page as unknown as CdpPage;
     this.#initialUrl = page.url();
   }

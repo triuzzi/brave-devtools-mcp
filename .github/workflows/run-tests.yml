@@ -93,11 +93,9 @@ jobs:
 
       - name: Run tests
         shell: bash
-        # Retry tests if they fail in the merge queue.
         run: >
-          npm run test:no-build --
+          npm run test:no-build -- --retry
           ${{ matrix.os == 'windows-latest' && '--test-concurrency=1' || '' }}
-          ${{ github.event_name == 'merge_group' && '--retry' || '' }}
 
       - name: Run notices tests
         shell: bash
