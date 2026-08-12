@@ -7,6 +7,8 @@
 import assert from 'node:assert';
 import {describe, it} from 'node:test';
 
+import sinon from 'sinon';
+
 import {serverHooks} from './server.js';
 import {html, withMcpContext} from './utils.js';
 
@@ -71,6 +73,22 @@ describe('WaitForHelper', () => {
 
       assert.strictEqual(result.navigatedToUrl, url);
     });
+  });
+
+  it('uses the configured page navigation timeout', async () => {
+    await withMcpContext(
+      async (_response, context) => {
+        const mcpPage = context.getSelectedMcpPage();
+        const waitForNavigation = sinon
+          .stub(mcpPage.pptrPage, 'waitForNavigation')
+          .resolves(null);
+
+        await mcpPage.waitForEventsAfterAction(async () => undefined);
+
+        sinon.assert.calledWithMatch(waitForNavigation, {timeout: 20_000});
+      },
+      {navigationTimeout: 20_000},
+    );
   });
 
   it('does not hang when an iframe navigates', async () => {
