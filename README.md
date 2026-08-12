@@ -1,16 +1,62 @@
 # Brave DevTools for agents
 
-[![npm brave-mcp package](https://img.shields.io/npm/v/brave-mcp.svg)](https://npmjs.org/package/brave-mcp)
+**Full Chrome DevTools MCP parity, rebuilt for Brave.**
 
-Brave DevTools for agents (`brave-mcp`) lets your coding agent (such as Antigravity, Claude, Cursor or Copilot)
-control and inspect a live Brave browser. It acts as a Model-Context-Protocol
-(MCP) server, giving your AI coding assistant access to the full power of
-Brave DevTools for reliable automation, in-depth debugging, and performance analysis.
-A [CLI](docs/cli.md) is also provided for use without MCP.
+[![CI](https://github.com/triuzzi/brave-devtools-mcp/actions/workflows/run-tests.yml/badge.svg?branch=main)](https://github.com/triuzzi/brave-devtools-mcp/actions/workflows/run-tests.yml)
+[![npm](https://img.shields.io/npm/v/brave-mcp.svg?logo=npm)](https://www.npmjs.com/package/brave-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/brave-mcp.svg?logo=npm)](https://www.npmjs.com/package/brave-mcp)
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-5B5BD6)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.triuzzi%2Fbrave-mcp)
+[![npm provenance](https://img.shields.io/badge/npm-provenance-2E7D32)](https://registry.npmjs.org/-/npm/v1/attestations/brave-mcp@1.7.0)
+[![upstream](https://img.shields.io/badge/upstream-0%20commits%20behind-brightgreen)](https://github.com/triuzzi/brave-devtools-mcp/compare/ChromeDevTools:main...main)
+[![license](https://img.shields.io/github/license/triuzzi/brave-devtools-mcp)](./LICENSE)
 
-This Brave port tracks [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) and preserves its complete tool surface.
+![Brave DevTools MCP: full Chrome DevTools MCP parity, rebuilt for Brave](./docs/assets/social-preview.png)
 
-## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./CONTRIBUTING.md) | [Troubleshooting](./docs/troubleshooting.md) | [Design Principles](./docs/design-principles.md)
+`brave-mcp` gives Claude Code, Codex, Cursor, OpenCode, and other MCP clients direct access to Brave for browser automation, network and console debugging, performance analysis, screenshots, accessibility inspection, and memory profiling. A standalone [`brave-devtools`](docs/cli.md) CLI is included too.
+
+## Install in one command
+
+### Claude Code
+
+```bash
+claude mcp add brave-devtools --scope user -- npx -y brave-mcp@latest
+```
+
+### Cursor
+
+```bash
+cursor --add-mcp '{"name":"brave-devtools","command":"npx","args":["-y","brave-mcp@latest"]}'
+```
+
+### Codex
+
+```bash
+codex mcp add brave-devtools -- npx -y brave-mcp@latest
+```
+
+### OpenCode
+
+```bash
+opencode mcp add brave-devtools -- npx -y brave-mcp@latest
+```
+
+Restart your client, then try this prompt:
+
+> Open my app in Brave. Find console errors and failed network requests, inspect the accessibility tree, run Lighthouse, and explain the highest-impact issue.
+
+## Why use this instead of Chrome DevTools MCP?
+
+| Capability                               | `brave-mcp`                             | `chrome-devtools-mcp`                |
+| ---------------------------------------- | --------------------------------------- | ------------------------------------ |
+| Browser launched and discovered natively | Brave Release, Beta, and Nightly        | Chrome Stable, Beta, Dev, and Canary |
+| Attach to an existing browser            | Brave profiles, HTTP, or WebSocket      | Chrome profiles, HTTP, or WebSocket  |
+| Upstream DevTools features               | Full parity; currently 0 commits behind | Source implementation                |
+| Usage telemetry                          | Disabled by default                     | Enabled by default                   |
+| Standalone CLI                           | `brave-devtools`                        | `chrome-devtools`                    |
+
+Use [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp) when your target browser is Chrome. Use `brave-mcp` when your target browser is Brave and you want Brave-native discovery, profiles, channels, naming, and privacy defaults without giving up upstream features.
+
+## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./CONTRIBUTING.md) | [Troubleshooting](./docs/troubleshooting.md) | [Design principles](./docs/design-principles.md)
 
 ## Key features
 
