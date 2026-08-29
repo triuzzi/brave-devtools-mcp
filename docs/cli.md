@@ -23,11 +23,11 @@ The CLI acts as a client to a background `brave-mcp` daemon (uses Unix sockets o
 # Check if the daemon is running
 brave-devtools status
 
-# Navigate the current page to a URL
-brave-devtools navigate_page "https://google.com"
+# Navigate page 1 to a URL
+brave-devtools navigate_page 1 --url "https://google.com"
 
-# Take a screenshot and save it to a file
-brave-devtools take_screenshot --filePath screenshot.png
+# Take a screenshot of page 1 and save it to a file
+brave-devtools take_screenshot 1 --filePath screenshot.png
 
 # Stop the background daemon when finished
 brave-devtools stop
@@ -42,7 +42,7 @@ Thus, `--categoryExtensions` tools are currently not available in the CLI.
 brave-devtools <tool> [arguments] [flags]
 ```
 
-- **Required Arguments**: Passed as positional arguments.
+- **Required Arguments**: Passed as positional arguments. Page-scoped tools require `<pageId>` as their first positional argument.
 - **Optional Arguments**: Passed as flags (e.g., `--filePath`, `--fullPage`).
 
 ### Examples
@@ -51,24 +51,38 @@ brave-devtools <tool> [arguments] [flags]
 
 ```sh
 brave-devtools new_page "https://example.com"
-brave-devtools navigate_page "https://web.dev" --type url
+brave-devtools navigate_page 1 --url "https://web.dev"
 ```
 
 **Interaction:**
 
 ```sh
-# Click an element by its UID from a snapshot
-brave-devtools click "element-uid-123"
+# Click an element by its UID from a snapshot on page 1
+brave-devtools click 1 "element-uid-123"
 
-# Fill a form field
-brave-devtools fill "input-uid-456" "search query"
+# Fill a form field on page 1
+brave-devtools fill 1 "input-uid-456" "search query"
+```
+
+**Script Evaluation:**
+
+- When `--categoryExtensions` and `--pageIdRouting` are enabled:
+  - Target a page using `--pageId <number>`: `brave-devtools evaluate_script "() => document.title" --pageId 1`
+  - Target an extension service worker using `--serviceWorkerId <string>`: `brave-devtools evaluate_script "() => self.registration.scope" --serviceWorkerId sw-1`
+
+```sh
+# Evaluate a JavaScript expression on page 1
+brave-devtools evaluate_script "() => document.title" --pageId 1
+
+# Evaluate inside an extension service worker
+brave-devtools evaluate_script "() => self.registration.scope" --serviceWorkerId sw-1
 ```
 
 **Analysis:**
 
 ```sh
-# Run a Lighthouse audit (defaults to navigation mode)
-brave-devtools lighthouse_audit --mode snapshot
+# Run a Lighthouse audit on page 1 (defaults to navigation mode)
+brave-devtools lighthouse_audit 1 --mode snapshot
 ```
 
 ## Output format

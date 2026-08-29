@@ -7,12 +7,12 @@
 import fsSync from 'node:fs';
 import path from 'node:path';
 
-import {DevTools} from './third_party/index.js';
+import {DevTools} from '../third_party/index.js';
 import {
   createIdGenerator,
   stableIdSymbol,
   type WithSymbolId,
-} from './utils/id.js';
+} from '../utils/id.js';
 
 export type AggregatedInfoWithId =
   WithSymbolId<DevTools.HeapSnapshotModel.HeapSnapshotModel.AggregatedInfo>;
@@ -43,6 +43,17 @@ export interface HeapSnapshotDetailedClassDiff extends HeapSnapshotClassDiff {
 export type DuplicateStringGroup =
   DevTools.HeapSnapshotModel.HeapSnapshotModel.DuplicateStringGroup;
 
+export type HeapQueryOptions =
+  DevTools.HeapSnapshotModel.HeapSnapshotModel.HeapQueryOptions;
+
+export type HeapEdgesQueryOptions =
+  DevTools.HeapSnapshotModel.HeapSnapshotModel.HeapEdgesQueryOptions;
+const VALID_EXTENSIONS: readonly string[] = ['.heapsnapshot', '.heaptimeline'];
+
+function hasValidHeapSnapshotExtension(filePath: string): boolean {
+  return VALID_EXTENSIONS.some(ext => filePath.endsWith(ext));
+}
+
 export class HeapSnapshotManager {
   #snapshotIdGenerator = createIdGenerator();
   #snapshots = new Map<
@@ -59,6 +70,11 @@ export class HeapSnapshotManager {
   async getSnapshot(
     filePath: string,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotProxy.HeapSnapshotProxy> {
+    if (!hasValidHeapSnapshotExtension(filePath)) {
+      throw new Error(
+        `File ${filePath} must have a .heapsnapshot or .heaptimeline extension.`,
+      );
+    }
     const absolutePath = path.resolve(filePath);
     const cached = this.#snapshots.get(absolutePath);
     if (cached) {
@@ -146,6 +162,13 @@ export class HeapSnapshotManager {
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.NativeContextSizes> {
     const snapshot = await this.getSnapshot(filePath);
     return await snapshot.getNativeContextSizes();
+  }
+
+  async getRetainedByContextSummary(
+    filePath: string,
+  ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainedByContextSummary> {
+    const snapshot = await this.getSnapshot(filePath);
+    return await snapshot.getRetainedByContextSummary();
   }
 
   async getOrCreateIdForClassKey(
@@ -241,13 +264,14 @@ export class HeapSnapshotManager {
   async getEdges(
     filePath: string,
     nodeId: number,
+    options?: HeapEdgesQueryOptions,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange> {
     const snapshot = await this.getSnapshot(filePath);
     const nodeIndex = await snapshot.nodeIndexForId(nodeId);
     if (nodeIndex === undefined) {
       throw new Error(`Node with ID ${nodeId} not found`);
     }
-    const provider = snapshot.createEdgesProvider(nodeIndex);
+    const provider = snapshot.createEdgesProvider(nodeIndex, options);
     return await provider.serializeItemsRange(0, Infinity);
   }
 
@@ -359,7 +383,7 @@ export class HeapSnapshotManager {
           /* noop */
         },
         DevTools.Common.Console.Console.instance(),
-        import.meta.resolve('./third_party/devtools-heap-snapshot-worker.js'),
+        import.meta.resolve('../third_party/devtools-heap-snapshot-worker.js'),
       );
 
     try {
@@ -396,6 +420,15 @@ export class HeapSnapshotManager {
   async getDuplicateStrings(filePath: string): Promise<DuplicateStringGroup[]> {
     const snapshot = await this.getSnapshot(filePath);
     return await snapshot.getDuplicateStrings();
+  }
+
+  async queryObjects(
+    filePath: string,
+    options: HeapQueryOptions,
+  ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange> {
+    const snapshot = await this.getSnapshot(filePath);
+    const provider = snapshot.queryObjects(options);
+    return await provider.serializeItemsRange(0, Infinity);
   }
 
   hasSnapshots(): boolean {

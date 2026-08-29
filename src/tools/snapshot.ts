@@ -11,7 +11,7 @@ import {definePageTool, timeoutSchema} from './ToolDefinition.js';
 
 export const takeSnapshot = definePageTool({
   name: 'take_snapshot',
-  description: `Take a text snapshot of the currently selected page based on the a11y tree. The snapshot lists page elements along with a unique
+  description: `Take a text snapshot of the target page based on the a11y tree. The snapshot lists page elements along with a unique
 identifier (uid). Always use the latest snapshot. Prefer taking a snapshot over taking a screenshot. The snapshot indicates the element selected
 in the DevTools Elements panel (if any).`,
   annotations: {
@@ -34,7 +34,9 @@ in the DevTools Elements panel (if any).`,
       ),
   },
   blockedByDialog: true,
-  verifyFilesSchema: ['filePath'],
+  verifyFilesSchema: {
+    filePath: true,
+  },
   handler: async (request, response) => {
     response.includeSnapshot({
       verbose: request.params.verbose ?? false,
@@ -60,7 +62,7 @@ export const waitFor = definePageTool({
     ...timeoutSchema,
   },
   blockedByDialog: true,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response) => {
     const page = request.page;
     await page.waitForTextOnPage(request.params.text, request.params.timeout);

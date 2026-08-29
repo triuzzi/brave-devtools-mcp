@@ -244,11 +244,13 @@
   },
   {
     "name": "experimental_page_id_routing",
-    "flagType": "boolean"
+    "flagType": "boolean",
+    "isDeprecated": true
   },
   {
     "name": "experimental_page_id_routing_present",
-    "flagType": "boolean"
+    "flagType": "boolean",
+    "isDeprecated": true
   },
   {
     "name": "experimental_webmcp",
@@ -388,6 +390,14 @@
   },
   {
     "name": "ignore_default_brave_arg_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "page_id_routing_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "page_id_routing",
     "flagType": "boolean"
   }
 ]
