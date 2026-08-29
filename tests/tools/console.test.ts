@@ -10,7 +10,7 @@ import {before, describe, it} from 'node:test';
 
 import type {Dialog} from 'puppeteer-core';
 
-import type {ParsedArguments} from '../../src/bin/brave-devtools-mcp-cli-options.js';
+import type {ParsedArguments} from '../../src/config/mcp-options.js';
 import {loadIssueDescriptions} from '../../src/devtools/issueDescriptions.js';
 import {McpResponse} from '../../src/McpResponse.js';
 import {TextSnapshot} from '../../src/TextSnapshot.js';
@@ -706,13 +706,7 @@ describe('console', () => {
         );
 
         const result = await response.handle(context);
-        t.assert.snapshot(
-          JSON.stringify(
-            stabilizeStructuredContent(result.structuredContent),
-            null,
-            2,
-          ),
-        );
+        t.assert.snapshot(stabilizeStructuredContent(result.structuredContent));
         await dialog.dismiss();
       });
     });

@@ -296,16 +296,28 @@ value,count,totalSelfSize,totalRetainedSize,truncated,nodeIds
 exports[`memory > get_heapsnapshot_edges > with pagination 1`] = `
 ## Heap Snapshot Data
 name,type,nodeId,nodeName,selfSize,retainedSize
+map,internal,25577,system / Map,0.0 kB,0.7 kB
 constructor,property,25575,String,0.1 kB,0.4 kB
-anchor,property,29295,anchor,0.0 kB,0.0 kB
 Showing 1-2 of 56 (Page 1 of 28).
 Next page: 1
+`;
+
+exports[`memory > get_heapsnapshot_edges > with retainedSize range 1`] = `
+## Heap Snapshot Data
+name,type,nodeId,nodeName,selfSize,retainedSize
+map,internal,25577,system / Map,0.0 kB,0.7 kB
+constructor,property,25575,String,0.1 kB,0.4 kB
+__proto__,property,25329,{constructor, __defineGetter__, __defineSetter__, …, get __proto__, set __proto__, toLocaleString},0.1 kB,0.3 kB
+Showing 1-3 of 3 (Page 1 of 1).
 `;
 
 exports[`memory > get_heapsnapshot_edges > with valid nodeId 1`] = `
 ## Heap Snapshot Data
 name,type,nodeId,nodeName,selfSize,retainedSize
+map,internal,25577,system / Map,0.0 kB,0.7 kB
 constructor,property,25575,String,0.1 kB,0.4 kB
+__proto__,property,25329,{constructor, __defineGetter__, __defineSetter__, …, get __proto__, set __proto__, toLocaleString},0.1 kB,0.3 kB
+<symbol Symbol.iterator>,property,29391,[Symbol.iterator],0.0 kB,0.0 kB
 anchor,property,29295,anchor,0.0 kB,0.0 kB
 at,property,29297,at,0.0 kB,0.0 kB
 big,property,29299,big,0.0 kB,0.0 kB
@@ -316,9 +328,9 @@ charCodeAt,property,29307,charCodeAt,0.0 kB,0.0 kB
 codePointAt,property,29309,codePointAt,0.0 kB,0.0 kB
 concat,property,29311,concat,0.0 kB,0.0 kB
 endsWith,property,29313,endsWith,0.0 kB,0.0 kB
+fixed,property,29319,fixed,0.0 kB,0.0 kB
 fontcolor,property,29315,fontcolor,0.0 kB,0.0 kB
 fontsize,property,29317,fontsize,0.0 kB,0.0 kB
-fixed,property,29319,fixed,0.0 kB,0.0 kB
 includes,property,29321,includes,0.0 kB,0.0 kB
 indexOf,property,29323,indexOf,0.0 kB,0.0 kB
 isWellFormed,property,29325,isWellFormed,0.0 kB,0.0 kB
@@ -338,28 +350,25 @@ search,property,29351,search,0.0 kB,0.0 kB
 slice,property,29353,slice,0.0 kB,0.0 kB
 small,property,29355,small,0.0 kB,0.0 kB
 split,property,29357,split,0.0 kB,0.0 kB
+startsWith,property,29369,startsWith,0.0 kB,0.0 kB
 strike,property,29359,strike,0.0 kB,0.0 kB
 sub,property,29361,sub,0.0 kB,0.0 kB
 substr,property,29363,substr,0.0 kB,0.0 kB
 substring,property,29365,substring,0.0 kB,0.0 kB
 sup,property,29367,sup,0.0 kB,0.0 kB
-startsWith,property,29369,startsWith,0.0 kB,0.0 kB
-toString,property,29371,toString,0.0 kB,0.0 kB
-toWellFormed,property,29373,toWellFormed,0.0 kB,0.0 kB
-trim,property,29375,trim,0.0 kB,0.0 kB
-trimStart,property,29377,trimStart,0.0 kB,0.0 kB
-trimLeft,property,29377,trimStart,0.0 kB,0.0 kB
-trimEnd,property,29379,trimEnd,0.0 kB,0.0 kB
-trimRight,property,29379,trimEnd,0.0 kB,0.0 kB
 toLocaleLowerCase,property,29381,toLocaleLowerCase,0.0 kB,0.0 kB
 toLocaleUpperCase,property,29383,toLocaleUpperCase,0.0 kB,0.0 kB
 toLowerCase,property,29385,toLowerCase,0.0 kB,0.0 kB
+toString,property,29371,toString,0.0 kB,0.0 kB
 toUpperCase,property,29387,toUpperCase,0.0 kB,0.0 kB
+toWellFormed,property,29373,toWellFormed,0.0 kB,0.0 kB
+trim,property,29375,trim,0.0 kB,0.0 kB
+trimEnd,property,29379,trimEnd,0.0 kB,0.0 kB
+trimLeft,property,29377,trimStart,0.0 kB,0.0 kB
+trimRight,property,29379,trimEnd,0.0 kB,0.0 kB
+trimStart,property,29377,trimStart,0.0 kB,0.0 kB
 valueOf,property,29389,valueOf,0.0 kB,0.0 kB
-<symbol Symbol.iterator>,property,29391,[Symbol.iterator],0.0 kB,0.0 kB
-__proto__,property,25329,{constructor, __defineGetter__, __defineSetter__, …, get __proto__, set __proto__, toLocaleString},0.1 kB,0.3 kB
 properties,internal,29393,system / PropertyArray,0.0 kB,0.0 kB
-map,internal,25577,system / Map,0.0 kB,0.7 kB
 1,hidden,71,,0.0 kB,0.0 kB
 Showing 1-56 of 56 (Page 1 of 1).
 `;
@@ -443,4 +452,72 @@ nodeId,nodeName,selfSize,retainedSize,attributedSize
 7199,system / NativeContext,1.2 kB,84.4 kB,84.4 kB
 Shared Size: 22.9 kB
 Unattributed Size: 44.8 kB
+### Retained by Context Summary
+Context count: 116
+Retained by context size: 3.5 kB (148 objects)
+Not retained by context size: 798 kB (11792 objects)
+Total size: 802 kB
+`;
+
+exports[`memory > query_heapsnapshot_objects > with an unbounded retainedSize filter 1`] = `
+## Heap Snapshot Data
+nodeId,nodeName,type,distance,selfSize,retainedSize
+1,,synthetic,100000000,0.0 kB,802 kB
+7249,system / NativeContext / https://example.com,hidden,1,1.2 kB,350 kB
+7199,system / NativeContext,hidden,1,1.2 kB,84.4 kB
+7307,system / NativeContext,hidden,1,1.2 kB,84.4 kB
+7195,system / NativeContext / https://example.com,hidden,1,1.2 kB,60.1 kB
+27635,Window (global*) / https://example.com,object,2,40.5 kB,51.0 kB
+30887,Window (global*) / https://example.com,object,2,40.5 kB,50.9 kB
+3,(GC roots),synthetic,100000001,0.0 kB,45.6 kB
+49547,,array,2,4.1 kB,41.0 kB
+36241,,array,2,4.1 kB,41.0 kB
+Showing 1-10 of 148 (Page 1 of 15).
+Next page: 1
+`;
+
+exports[`memory > query_heapsnapshot_objects > with className filter 1`] = `
+## Heap Snapshot Data
+nodeId,nodeName,type,distance,selfSize,retainedSize
+27635,Window (global*) / https://example.com,object,2,40.5 kB,51.0 kB
+30887,Window (global*) / https://example.com,object,2,40.5 kB,50.9 kB
+30967,Window (prototype) / https://example.com,object,4,26.6 kB,26.7 kB
+42085,Window (prototype) / https://example.com,object,4,26.6 kB,26.7 kB
+32995,Window (internal cache) / https://example.com,object,3,0.2 kB,10.1 kB
+41995,Window (internal cache) / https://example.com,object,3,0.2 kB,10.1 kB
+16321,Window / https://example.com,native,2,0.9 kB,1.9 kB
+16329,Window,closure,3,0.1 kB,0.4 kB
+16341,Window,closure,3,0.1 kB,0.4 kB
+30975,Window (prototype) / https://example.com,object,3,0.0 kB,0.2 kB
+Showing 1-10 of 34 (Page 1 of 4).
+Next page: 1
+`;
+
+exports[`memory > query_heapsnapshot_objects > with default options 1`] = `
+## Heap Snapshot Data
+nodeId,nodeName,type,distance,selfSize,retainedSize
+1,,synthetic,100000000,0.0 kB,802 kB
+7249,system / NativeContext / https://example.com,hidden,1,1.2 kB,350 kB
+7199,system / NativeContext,hidden,1,1.2 kB,84.4 kB
+7307,system / NativeContext,hidden,1,1.2 kB,84.4 kB
+7195,system / NativeContext / https://example.com,hidden,1,1.2 kB,60.1 kB
+27635,Window (global*) / https://example.com,object,2,40.5 kB,51.0 kB
+30887,Window (global*) / https://example.com,object,2,40.5 kB,50.9 kB
+3,(GC roots),synthetic,100000001,0.0 kB,45.6 kB
+49547,,array,2,4.1 kB,41.0 kB
+36241,,array,2,4.1 kB,41.0 kB
+Showing 1-10 of 27466 (Page 1 of 2747).
+Next page: 1
+`;
+
+exports[`memory > query_heapsnapshot_objects > with sortBy selfSize and pagination 1`] = `
+## Heap Snapshot Data
+nodeId,nodeName,type,distance,selfSize,retainedSize
+1,,synthetic,100000000,0.0 kB,802 kB
+7249,system / NativeContext / https://example.com,hidden,1,1.2 kB,350 kB
+7199,system / NativeContext,hidden,1,1.2 kB,84.4 kB
+7307,system / NativeContext,hidden,1,1.2 kB,84.4 kB
+7195,system / NativeContext / https://example.com,hidden,1,1.2 kB,60.1 kB
+Showing 1-5 of 27466 (Page 1 of 5494).
+Next page: 1
 `;

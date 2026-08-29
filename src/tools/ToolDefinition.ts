@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {ParsedArguments} from '../bin/brave-devtools-mcp-cli-options.js';
+import type {ParsedArguments} from '../config/mcp-options.js';
 import type {
   HeapSnapshotAggregateData,
   HeapSnapshotClassDiff,
   HeapSnapshotDetailedClassDiff,
   DuplicateStringGroup,
-} from '../HeapSnapshotManager.js';
+  HeapEdgesQueryOptions,
+  HeapQueryOptions,
+} from '../processors/HeapSnapshotManager.js';
 import type {McpPage} from '../McpPage.js';
 import {zod} from '../third_party/index.js';
 import type {
@@ -28,17 +30,27 @@ import type {
   Protocol,
   Page,
 } from '../third_party/index.js';
-import type {InsightName, TraceResult} from '../trace-processing/parse.js';
+import type {InsightName, TraceResult} from '../processors/PerformanceTrace.js';
 import type {
   TextSnapshotNode,
   GeolocationOptions,
   ExtensionServiceWorker,
 } from '../types.js';
 import type {PaginationOptions} from '../types.js';
-import type {WaitForEventsResult, DialogAction} from '../WaitForHelper.js';
+import type {
+  WaitForEventsResult,
+  DialogAction,
+} from '../utils/WaitForHelper.js';
 
 import type {ToolCategory} from './categories.js';
 import type {ToolGroups} from './thirdPartyDeveloper.js';
+
+export type FileVerificationOption =
+  | true
+  | {
+      local?: boolean;
+      remote?: boolean;
+    };
 
 export interface BaseToolDefinition<
   Schema extends zod.ZodRawShape = zod.ZodRawShape,
@@ -56,7 +68,7 @@ export interface BaseToolDefinition<
   };
   schema: Schema;
   blockedByDialog: boolean;
-  verifyFilesSchema: Array<keyof Schema>;
+  verifyFilesSchema: Partial<Record<keyof Schema, FileVerificationOption>>;
 }
 
 export interface ToolDefinition<
@@ -120,6 +132,7 @@ export interface Response {
     stats: DevTools.HeapSnapshotModel.HeapSnapshotModel.Statistics,
     staticData: DevTools.HeapSnapshotModel.HeapSnapshotModel.StaticData | null,
     nativeContextSizes: DevTools.HeapSnapshotModel.HeapSnapshotModel.NativeContextSizes,
+    retainedByContextSummary: DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainedByContextSummary,
   ): void;
   setHeapSnapshotNodes(
     nodes: DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange,
@@ -199,7 +212,6 @@ export type SupportedExtensions =
  * Only add methods used by tools/*.
  */
 export type Context = Readonly<{
-  validatePath(filePath?: string): Promise<void>;
   installPWA(options: InstallPWAOptions): Promise<string>;
   uninstallPWA(options: UninstallPWAOptions): Promise<void>;
   launchPWA(options: LaunchPWAOptions): Promise<Page>;
@@ -261,6 +273,9 @@ export type Context = Readonly<{
   getHeapSnapshotNativeContextSizes(
     filePath: string,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.NativeContextSizes>;
+  getHeapSnapshotRetainedByContextSummary(
+    filePath: string,
+  ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainedByContextSummary>;
   getHeapSnapshotNodesById(
     filePath: string,
     id: number,
@@ -290,6 +305,7 @@ export type Context = Readonly<{
   getHeapSnapshotEdges(
     filePath: string,
     nodeId: number,
+    options?: HeapEdgesQueryOptions,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange>;
   getHeapSnapshotClassDiffs(
     baseFilePath: string,
@@ -300,6 +316,10 @@ export type Context = Readonly<{
     currentFilePath: string,
     classIndex: number,
   ): Promise<HeapSnapshotDetailedClassDiff>;
+  queryHeapSnapshotObjects(
+    filePath: string,
+    options: HeapQueryOptions,
+  ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange>;
 }>;
 
 /**

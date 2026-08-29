@@ -597,7 +597,7 @@ If you run into any issues, checkout our [troubleshooting guide](./docs/troubles
   - [`take_snapshot`](docs/tool-reference.md#take_snapshot)
   - [`screencast_start`](docs/tool-reference.md#screencast_start)
   - [`screencast_stop`](docs/tool-reference.md#screencast_stop)
-- **Memory** (12 tools)
+- **Memory** (13 tools)
   - [`take_heapsnapshot`](docs/tool-reference.md#take_heapsnapshot)
   - [`close_heapsnapshot`](docs/tool-reference.md#close_heapsnapshot)
   - [`compare_heapsnapshots`](docs/tool-reference.md#compare_heapsnapshots)
@@ -610,6 +610,7 @@ If you run into any issues, checkout our [troubleshooting guide](./docs/troubles
   - [`get_heapsnapshot_retainers`](docs/tool-reference.md#get_heapsnapshot_retainers)
   - [`get_heapsnapshot_retaining_paths`](docs/tool-reference.md#get_heapsnapshot_retaining_paths)
   - [`get_heapsnapshot_summary`](docs/tool-reference.md#get_heapsnapshot_summary)
+  - [`query_heapsnapshot_objects`](docs/tool-reference.md#query_heapsnapshot_objects)
 - **Extensions** (5 tools)
   - [`install_extension`](docs/tool-reference.md#install_extension)
   - [`list_extensions`](docs/tool-reference.md#list_extensions)
@@ -702,10 +703,10 @@ The Brave DevTools MCP server supports the following configuration option:
   - **Type:** boolean
   - **Default:** `false`
 
-- **`--experimentalPageIdRouting`/ `--experimental-page-id-routing`**
-  Whether to expose pageId on page-scoped tools and route requests by page ID (useful for concurrent agent sessions).
+- **`--pageIdRouting`/ `--page-id-routing`**
+  Require pageId on page-scoped tools and route requests by page ID (useful for concurrent agent sessions). Use --no-page-id-routing to disable.
   - **Type:** boolean
-  - **Default:** `false`
+  - **Default:** `true`
 
 - **`--experimentalDevtools`/ `--experimental-devtools`**
   Whether to enable automation over DevTools targets
@@ -890,18 +891,25 @@ You can also run `npx brave-mcp@latest --help` to see all available configuratio
 
 ### Concurrent sessions
 
-Most MCP clients start one Brave DevTools MCP server per conversation. If your
-client shares a single server instance across concurrent agents or subagents,
-start the server with `--experimentalPageIdRouting`. This exposes `pageId` on
-page-scoped tools so each agent can route tool calls to the tab it is working
-with.
+Most MCP clients start one Brave DevTools MCP server per conversation.
+By default, the server runs with `--pageIdRouting` enabled, making `pageId` a
+required parameter on page-scoped tools (such as `click`, `fill`, `navigate_page`,
+`take_snapshot`, etc.) so multiple agents or subagents sharing a server instance can
+route tool calls directly to the specific tab they are working with.
+
+For `evaluate_script`, `pageId` is required by default for targeting pages, but
+becomes optional when `--categoryExtensions` is enabled so that `serviceWorkerId`
+can be specified instead to evaluate inside an extension background service worker.
+
+To disable this behavior and default to the currently selected page, pass
+`--no-page-id-routing`.
 
 ```json
 {
   "mcpServers": {
     "brave-devtools": {
       "command": "npx",
-      "args": ["-y", "brave-mcp@latest", "--experimentalPageIdRouting"]
+      "args": ["-y", "brave-mcp@latest"]
     }
   }
 }

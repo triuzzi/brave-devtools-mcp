@@ -7,6 +7,10 @@ description: Diagnoses and resolves memory leaks in JavaScript/Node.js applicati
 
 This skill provides expert guidance and workflows for finding, diagnosing, and fixing memory leaks in JavaScript and Node.js applications using Brave DevTools MCP tools.
 
+## Prerequisites
+
+Advanced memory debugging tools (`compare_heapsnapshots`, `get_heapsnapshot_details`, etc.) are only available when the server is started with the `--memoryDebugging` flag. First check if these tools are available; if not, try to read the MCP configuration file to check if `--memoryDebugging` is enabled.
+
 ## Core Principles
 
 - **Prefer MCP memory tools:** Do NOT attempt to read raw `.heapsnapshot` files directly, as they are extremely large and will consume too many tokens. Use the Brave DevTools MCP heap snapshot tools to summarize, compare, and inspect snapshots.
@@ -20,10 +24,10 @@ This skill provides expert guidance and workflows for finding, diagnosing, and f
 
 When investigating a frontend web application memory leak, utilize the `brave-mcp` tools to interact with the application and take snapshots.
 
-- Use tools like `click`, `navigate_page`, `fill`, etc., to manipulate the page into the desired state.
+- Use page-scoped tools like `click`, `navigate_page`, `fill`, etc. (specifying `pageId`) to manipulate the page into the desired state.
 - Revert the page back to the original state after interactions to see if memory is released.
 - Repeat the same user interactions 10 times to amplify the leak.
-- Use `take_heapsnapshot` to save `.heapsnapshot` files to disk at baseline, target (after actions), and final (after reverting actions) states.
+- Use `take_heapsnapshot` (with `pageId`) to save `.heapsnapshot` files to disk at baseline, target (after actions), and final (after reverting actions) states.
 
 ### 2. Comparing Snapshots
 

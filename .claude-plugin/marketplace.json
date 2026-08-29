@@ -1,6 +1,6 @@
 {
   "name": "brave-devtools-plugins",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Bundled plugins for automating and debugging Brave.",
   "repository": "https://github.com/triuzzi/brave-devtools-mcp",
   "owner": {
