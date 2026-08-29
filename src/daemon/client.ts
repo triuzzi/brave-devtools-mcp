@@ -11,7 +11,7 @@ import net from 'node:net';
 import type {CallToolResult} from '../third_party/index.js';
 import {PipeTransport} from '../third_party/index.js';
 import {getTempFilePath} from '../utils/files.js';
-import {logger} from '../utils/logger.js';
+import {logger, puppeteerLogger} from '../utils/logger.js';
 
 import type {
   DaemonMessage,
@@ -164,7 +164,7 @@ export async function sendCommand(
       reject(new Error('Timeout waiting for daemon response'));
     }, timeout);
 
-    const transport = new PipeTransport(socket, socket);
+    const transport = new PipeTransport(socket, socket, puppeteerLogger);
     transport.onmessage = async (message: string) => {
       clearTimeout(timer);
       logger?.('onmessage', message);
@@ -224,6 +224,15 @@ export async function handleResponse(
   format: 'json' | 'md',
 ): Promise<string> {
   if (response.isError) {
+    if (format === 'md') {
+      const chunks = [];
+      for (const content of response.content) {
+        if (content.type === 'text') {
+          chunks.push(content.text);
+        }
+      }
+      return chunks.join(' ');
+    }
     return JSON.stringify(response.content);
   }
   const chunks = [];

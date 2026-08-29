@@ -8,14 +8,17 @@ import fs from 'node:fs';
 
 import type {Tool} from '@modelcontextprotocol/sdk/types.js';
 
-import {cliOptions} from '../build/src/bin/brave-devtools-mcp-cli-options.js';
-import type {ParsedArguments} from '../build/src/bin/brave-devtools-mcp-cli-options.js';
-import {buildFlag} from '../build/src/index.js';
+import {
+  mcpOptions,
+  type ParsedArguments,
+} from '../build/src/config/mcp-options.js';
+import {buildFlag} from '../build/src/ToolHandler.js';
 import {
   ToolCategory,
   OFF_BY_DEFAULT_CATEGORIES,
   labels,
 } from '../build/src/tools/categories.js';
+import {pageIdSchema} from '../build/src/tools/ToolDefinition.js';
 import {createTools} from '../build/src/tools/tools.js';
 
 const OUTPUT_PATH = './docs/tool-reference.md';
@@ -154,7 +157,7 @@ function updateReadmeWithToolsTOC(toolsTOC: string): void {
 function generateConfigOptionsMarkdown(): string {
   let markdown = '';
 
-  for (const [optionName, optionConfig] of Object.entries(cliOptions)) {
+  for (const [optionName, optionConfig] of Object.entries(mcpOptions)) {
     // Skip hidden options
     if (optionConfig.hidden) {
       continue;
@@ -432,7 +435,7 @@ async function generateReference(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getToolsAndCategories(tools: any) {
+function getToolsAndCategories(tools: any, slim = false) {
   // Convert ToolDefinitions to ToolWithAnnotations
   const toolsWithAnnotations: ToolWithAnnotations[] = tools
     .filter(tool => {
@@ -453,8 +456,12 @@ function getToolsAndCategories(tools: any) {
       const properties: Record<string, TypeInfo> = {};
       const required: string[] = [];
 
+      const toolSchema = {
+        ...tool.schema,
+        ...(tool.pageScoped && !slim ? pageIdSchema : {}),
+      };
       for (const [key, schema] of Object.entries(
-        tool.schema as unknown as Record<string, ZodSchema>,
+        toolSchema as unknown as Record<string, ZodSchema>,
       )) {
         const info = getZodTypeInfo(schema);
         properties[key] = info;
@@ -518,7 +525,9 @@ async function generateToolDocumentation(): Promise<void> {
 
     {
       const {toolsWithAnnotations, categories, sortedCategories} =
-        getToolsAndCategories(createTools({slim: false} as ParsedArguments));
+        getToolsAndCategories(
+          createTools({slim: false, pageIdRouting: true} as ParsedArguments),
+        );
       await generateReference(
         'Brave DevTools MCP Tool Reference',
         OUTPUT_PATH,
@@ -534,7 +543,10 @@ async function generateToolDocumentation(): Promise<void> {
 
     {
       const {toolsWithAnnotations, categories, sortedCategories} =
-        getToolsAndCategories(createTools({slim: true} as ParsedArguments));
+        getToolsAndCategories(
+          createTools({slim: true} as ParsedArguments),
+          true,
+        );
       await generateReference(
         'Brave DevTools MCP Slim Tool Reference',
         SLIM_OUTPUT_PATH,

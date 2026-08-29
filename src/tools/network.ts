@@ -34,7 +34,7 @@ const FILTERABLE_RESOURCE_TYPES: readonly [ResourceType, ...ResourceType[]] = [
 
 export const listNetworkRequests = definePageTool({
   name: 'list_network_requests',
-  description: `Lists the most recent requests for the currently selected page since the last navigation.`,
+  description: `Lists the most recent requests for the target page since the last navigation.`,
   annotations: {
     category: ToolCategory.NETWORK,
     readOnlyHint: true,
@@ -71,7 +71,7 @@ export const listNetworkRequests = definePageTool({
       ),
   },
   blockedByDialog: false,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response) => {
     const data = await request.page.getDevToolsData();
     response.attachDevToolsData(data);
@@ -116,7 +116,10 @@ export const getNetworkRequest = definePageTool({
       ),
   },
   blockedByDialog: true,
-  verifyFilesSchema: ['requestFilePath', 'responseFilePath'],
+  verifyFilesSchema: {
+    requestFilePath: true,
+    responseFilePath: true,
+  },
   handler: async (request, response) => {
     if (request.params.reqid) {
       response.attachNetworkRequest(request.params.reqid, {

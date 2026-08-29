@@ -9,7 +9,7 @@ import type {
   HeapSnapshotClassDiff,
   HeapSnapshotDetailedClassDiff,
   DuplicateStringGroup,
-} from '../HeapSnapshotManager.js';
+} from '../processors/HeapSnapshotManager.js';
 import {DevTools} from '../third_party/index.js';
 import {stableIdSymbol} from '../utils/id.js';
 
@@ -156,6 +156,21 @@ export class HeapSnapshotFormatter {
     lines.push(
       `Unattributed Size: ${formatBytesToKb(sizes.noAttributionSize)}`,
     );
+    return lines.join('\n');
+  }
+
+  static formatRetainedByContextSummary(
+    summary: DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainedByContextSummary,
+  ): string {
+    const lines: string[] = [];
+    lines.push(`Context count: ${summary.contextCount}`);
+    lines.push(
+      `Retained by context size: ${formatBytesToKb(summary.retainedByContextSize)} (${summary.retainedByContextCount} objects)`,
+    );
+    lines.push(
+      `Not retained by context size: ${formatBytesToKb(summary.notRetainedByContextSize)} (${summary.notRetainedByContextCount} objects)`,
+    );
+    lines.push(`Total size: ${formatBytesToKb(summary.totalSize)}`);
     return lines.join('\n');
   }
 

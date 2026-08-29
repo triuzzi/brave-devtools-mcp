@@ -9,12 +9,21 @@ import {describe, it, afterEach} from 'node:test';
 
 import sinon from 'sinon';
 
-import {HeapSnapshotManager} from '../src/HeapSnapshotManager.js';
-import {DevTools} from '../src/third_party/index.js';
+import {HeapSnapshotManager} from '../../src/processors/HeapSnapshotManager.js';
+import {DevTools} from '../../src/third_party/index.js';
 
 describe('HeapSnapshotManager', () => {
   afterEach(() => {
     sinon.restore();
+  });
+
+  it('rejects when a file without .heapsnapshot or .heaptimeline extension is passed', async () => {
+    const manager = new HeapSnapshotManager();
+
+    await assert.rejects(
+      manager.getSnapshot('tests/fixtures/snapshot_diffs.js'),
+      /must have a \.heapsnapshot or \.heaptimeline extension/,
+    );
   });
 
   it('disposes the worker when snapshot loading fails', async () => {

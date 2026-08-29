@@ -6,7 +6,7 @@
 
 import type fs from 'node:fs';
 
-import type {parseArguments} from './bin/brave-devtools-mcp-cli-options.js';
+import {type ParsedArguments} from './config/mcp-options.js';
 import type {Channel} from './browser.js';
 import {ensureBrowserConnected, ensureBrowserLaunched} from './browser.js';
 import {loadIssueDescriptions} from './devtools/issueDescriptions.js';
@@ -16,6 +16,7 @@ import {FilePersistence} from './telemetry/persistence.js';
 import {
   McpServer,
   type CallToolResult,
+  type Root,
   SetLevelRequestSchema,
   ListRootsResultSchema,
   RootsListChangedNotificationSchema,
@@ -24,13 +25,25 @@ import {ToolHandler} from './ToolHandler.js';
 import type {DefinedPageTool, ToolDefinition} from './tools/ToolDefinition.js';
 import {createTools} from './tools/tools.js';
 import {logger} from './utils/logger.js';
-import {Mutex} from './third_party/index.js';
+import {Mutex, puppeteer} from './third_party/index.js';
 import {VERSION} from './version.js';
 
 export {buildFlag} from './ToolHandler.js';
 
+puppeteer.setFollowSymlinks(false);
+
+/**
+ * Timeout for a `roots/list` that a tool call is waiting on, matching the 5s
+ * default used for page operations. `getContext()` awaits it while
+ * `ToolHandler` holds the tool mutex, so leaving it unbounded lets a client
+ * that negotiates `roots` but does not answer block every tool for the SDK's
+ * default of 60s. Background refreshes are not bounded by this, so roots a
+ * slow client sends late still land.
+ */
+const ROOTS_REQUEST_TIMEOUT = 5_000;
+
 export async function createMcpServer(
-  serverArgs: ReturnType<typeof parseArguments>,
+  serverArgs: ParsedArguments,
   options: {
     logFile?: fs.WriteStream;
   },
@@ -58,7 +71,15 @@ export async function createMcpServer(
     return {};
   });
 
-  const updateRoots = async () => {
+  // Roots are client state rather than browser state, so the last listing stays
+  // valid across browser reconnects and only the client can invalidate it, via
+  // the `roots/list_changed` notification handled below
+  let lastRoots: Root[] | undefined;
+
+  // `timeout` is only passed where a tool call is waiting on the result – the
+  // background refreshes below block nobody, so bounding them would just discard
+  // roots a slow client was about to send
+  const updateRoots = async (timeout?: number) => {
     if (!server.server.getClientCapabilities()?.roots) {
       return;
     }
@@ -66,8 +87,10 @@ export async function createMcpServer(
       const roots = await server.server.request(
         {method: 'roots/list'},
         ListRootsResultSchema,
+        timeout === undefined ? undefined : {timeout},
       );
-      context?.setRoots(roots.roots);
+      lastRoots = roots.roots;
+      context?.setRoots(lastRoots);
     } catch (e) {
       logger?.('Failed to list roots', e);
     }
@@ -158,7 +181,16 @@ export async function createMcpServer(
         // Surfaces a one-time note in the next response after a reconnect.
         reconnected: context !== undefined,
       });
-      await updateRoots();
+      if (lastRoots === undefined) {
+        // Nothing listed yet, so this call has to wait – bounded, since it is
+        // holding the tool mutex, and a later background refresh still lands
+        await updateRoots(ROOTS_REQUEST_TIMEOUT);
+      } else {
+        // Carry the known roots over and refresh out of band, so a reconnect
+        // never pays for a client round-trip
+        context.setRoots(lastRoots);
+        void updateRoots();
+      }
     }
     return context;
   }
@@ -200,7 +232,7 @@ export async function createMcpServer(
   return {server};
 }
 
-export const logDisclaimers = (args: ReturnType<typeof parseArguments>) => {
+export const logDisclaimers = (args: ParsedArguments) => {
   console.error(
     `brave-devtools-mcp exposes content of the browser instance to MCP clients, allowing them to inspect,
 debug, and modify any data in the browser or DevTools.
