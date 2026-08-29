@@ -42,7 +42,7 @@ const LIST_CONSOLE_MESSAGES_TOOL_NAME = 'list_console_messages';
 export const listConsoleMessages = definePageTool(cliArgs => {
   return {
     name: LIST_CONSOLE_MESSAGES_TOOL_NAME,
-    description: `List all console messages for the currently selected page since the last navigation.${cliArgs?.categoryExtensions ? ' This includes console messages originating from extensions content scripts.' : ''}`,
+    description: `List all console messages for the target page since the last navigation.${cliArgs?.categoryExtensions ? ' This includes console messages originating from extensions content scripts.' : ''}`,
     annotations: {
       category: ToolCategory.DEBUGGING,
       readOnlyHint: true,
@@ -92,7 +92,7 @@ export const listConsoleMessages = definePageTool(cliArgs => {
         ),
     },
     blockedByDialog: false,
-    verifyFilesSchema: [],
+    verifyFilesSchema: {},
     handler: async (request, response) => {
       response.setIncludeConsoleData(true, {
         pageSize: request.params.pageSize,
@@ -121,7 +121,7 @@ export const getConsoleMessage = definePageTool({
       ),
   },
   blockedByDialog: false,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response) => {
     response.attachConsoleMessage(request.params.msgid);
   },

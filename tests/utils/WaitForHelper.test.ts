@@ -9,8 +9,8 @@ import {describe, it} from 'node:test';
 
 import sinon from 'sinon';
 
-import {serverHooks} from './server.js';
-import {html, withMcpContext} from './utils.js';
+import {serverHooks} from '../server.js';
+import {html, withMcpContext} from '../utils.js';
 
 describe('WaitForHelper', () => {
   const server = serverHooks();

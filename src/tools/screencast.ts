@@ -25,7 +25,7 @@ const supportedExtensions: SupportedVideoExtension[] = ['.webm', '.mp4'];
 
 export const startScreencast = definePageTool(args => ({
   name: 'screencast_start',
-  description: `Starts recording a screencast (video) of the selected page in specified format.`,
+  description: `Starts recording a screencast (video) of the target page in specified format.`,
   annotations: {
     category: ToolCategory.DEBUGGING,
     readOnlyHint: false,
@@ -40,7 +40,9 @@ export const startScreencast = definePageTool(args => ({
       ),
   },
   blockedByDialog: false,
-  verifyFilesSchema: ['filePath'],
+  verifyFilesSchema: {
+    filePath: true,
+  },
   handler: async (request, response, context) => {
     if (context.getScreenRecorder() !== null) {
       response.appendResponseLine(
@@ -121,7 +123,7 @@ export const startScreencast = definePageTool(args => ({
 
 export const stopScreencast = definePageTool({
   name: 'screencast_stop',
-  description: 'Stops the active screencast recording on the selected page.',
+  description: 'Stops the active screencast recording on the target page.',
   annotations: {
     category: ToolCategory.DEBUGGING,
     readOnlyHint: false,
@@ -129,7 +131,7 @@ export const stopScreencast = definePageTool({
   },
   schema: {},
   blockedByDialog: false,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (_request, response, context) => {
     const data = context.getScreenRecorder();
     if (!data) {

@@ -11,7 +11,7 @@ import path from 'node:path';
 
 import type {Browser, LaunchOptions, Target} from './third_party/index.js';
 import {puppeteer} from './third_party/index.js';
-import {logger} from './utils/logger.js';
+import {logger, puppeteerLogger} from './utils/logger.js';
 
 let browser: Browser | undefined;
 let browserMode: 'launched' | 'connected' | undefined;
@@ -282,6 +282,7 @@ export async function ensureBrowserConnected(options: {
     protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
     blocklist: options.blocklist,
     allowlist: options.allowlist,
+    logger: puppeteerLogger,
   };
 
   let autoConnect = false;
@@ -445,6 +446,7 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
       protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
       blocklist: options.blocklist,
       allowlist: options.allowlist,
+      logger: puppeteerLogger,
     });
     if (options.logFile) {
       // FIXME: we are probably subscribing too late to catch startup logs. We
