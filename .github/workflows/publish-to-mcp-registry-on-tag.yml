@@ -1,9 +1,6 @@
 name: publish-to-mcp-registry-on-tag
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
   workflow_call:
 
