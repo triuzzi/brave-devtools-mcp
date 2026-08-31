@@ -44,6 +44,10 @@ green and merged, dispatch the `Release` workflow from `main`. It verifies the
 full package, creates the matching `v<version>` GitHub release, publishes
 `brave-mcp` to npm with provenance, and publishes the MCP Registry entry.
 
+Do not create the tag or the GitHub release by hand. The workflow owns both, and
+it refuses to run when either already exists, so a hand-made release has to be
+deleted before a release can go out.
+
 ### How to update the Lighthouse dependency
 
 - Update the Lighthouse version in package.json and run `npm install`. The npm version is currently used for types.
