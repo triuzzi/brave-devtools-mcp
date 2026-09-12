@@ -107,6 +107,49 @@ describe('brave-devtools', () => {
     );
   });
 
+  it('fails to invoke evaluate_script when javascriptEvaluation is disabled', async () => {
+    await runCli(['start', '--no-javascript-evaluation'], sessionId);
+
+    const result = await runCli(['evaluate_script', '() => 1'], sessionId);
+    assert.strictEqual(result.status, 0);
+    assert(
+      result.stdout.includes(
+        'Tool evaluate_script requires flag --javascriptEvaluation and is currently disabled',
+      ),
+      'error message is unexpected: ' + result.stdout,
+    );
+    assert(
+      result.stdout.includes(
+        'brave-devtools start --javascriptEvaluation=true',
+      ),
+      'restart command suggestion is missing: ' + result.stdout,
+    );
+
+    const navResult = await runCli(
+      ['navigate_page', '1', '--url', 'javascript:alert(1)'],
+      sessionId,
+    );
+    assert.strictEqual(navResult.status, 0);
+    assert(
+      navResult.stdout.includes(
+        'Navigating to javascript: URLs is not allowed when JavaScript evaluation is disabled.',
+      ),
+      'error message is unexpected: ' + navResult.stdout,
+    );
+
+    const initScriptResult = await runCli(
+      ['navigate_page', '1', '--initScript', 'alert(1)'],
+      sessionId,
+    );
+    assert.strictEqual(initScriptResult.status, 0);
+    assert(
+      initScriptResult.stdout.includes(
+        'Unknown argument for tool "navigate_page": "initScript"',
+      ),
+      'error message is unexpected: ' + initScriptResult.stdout,
+    );
+  });
+
   it('can record a performance trace', async () => {
     const startResult = await runCli(
       ['start', '--performanceCrux=false'],

@@ -405,6 +405,40 @@ export const commands: Commands = {
       },
     },
   },
+  get_css_styles: {
+    description:
+      'Retrieve matched CSS rules, inline styles, inherited styles, and cascade information for an element identified by its UID.\nUse this tool to debug why specific CSS properties are applied, overridden, or conflicting. Supports pagination for elements with many matched rules. Requires a UID from take_snapshot.',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      uid: {
+        name: 'uid',
+        type: 'string',
+        description:
+          'The uid of the element on the page from the page content snapshot to inspect CSS styles for',
+        required: true,
+      },
+      pageSize: {
+        name: 'pageSize',
+        type: 'integer',
+        description:
+          'Maximum number of CSS rules to return per page. When omitted, returns all rules.',
+        required: false,
+      },
+      pageIdx: {
+        name: 'pageIdx',
+        type: 'integer',
+        description:
+          'Page number to return (0-based). When omitted, returns the first page.',
+        required: false,
+      },
+    },
+  },
   get_heapsnapshot_class_nodes: {
     description:
       'Loads a memory heapsnapshot and returns instances of a specific class with their IDs. (requires flag: --memoryDebugging=true)',
@@ -703,7 +737,7 @@ export const commands: Commands = {
   },
   get_network_request: {
     description:
-      'Gets a network request by an optional reqid, if omitted returns the currently selected request in the DevTools Network panel.',
+      "Gets a network request by an optional reqid, if omitted returns the currently selected request in the DevTools Network panel. Useful for inspecting request headers (including 'Cookie') and response headers (including 'Set-Cookie' and directives).",
     category: 'Network',
     args: {
       pageId: {
@@ -1114,7 +1148,7 @@ export const commands: Commands = {
         name: 'isolatedContext',
         type: 'string',
         description:
-          'If specified, the page is created in an isolated browser context with the given name. Pages in the same browser context share cookies and storage. Pages in different browser contexts are fully isolated.',
+          'If specified, the page is created in an isolated browser context with the given name. Pages in the same browser context share cookies and storage. Pages in different browser contexts are fully isolated (useful for clean-slate testing of cookies and authentication).',
         required: false,
       },
       timeout: {

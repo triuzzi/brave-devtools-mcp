@@ -21,8 +21,9 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import {executablePath} from 'puppeteer';
 
+import {mcpOptions} from '../src/config/mcp-options.js';
+import {getOffByDefaultCategories} from '../src/config/category-options.js';
 import type {ToolCategory} from '../src/tools/categories.js';
-import {OFF_BY_DEFAULT_CATEGORIES} from '../src/tools/categories.js';
 import type {ToolDefinition} from '../src/tools/ToolDefinition.js';
 
 describe('e2e', () => {
@@ -112,7 +113,7 @@ describe('e2e', () => {
         definedNames.sort();
         assert.deepStrictEqual(exposedNames, definedNames);
       },
-      OFF_BY_DEFAULT_CATEGORIES.map(category => `--category-${category}`),
+      getOffByDefaultCategories().map(category => `--category-${category}`),
     );
   });
 
@@ -121,7 +122,7 @@ describe('e2e', () => {
       const {tools} = await client.listTools();
       const exposedNames = tools.map(t => t.name).sort();
       const definedNames = await getToolsWithFilteredCategories(
-        OFF_BY_DEFAULT_CATEGORIES,
+        getOffByDefaultCategories(),
       );
       definedNames.sort();
       assert.deepStrictEqual(exposedNames, definedNames);
@@ -204,6 +205,17 @@ describe('e2e', () => {
     );
   });
 
+  it('can disable javascript evaluation tools', async () => {
+    await withClient(
+      async client => {
+        const {tools} = await client.listTools();
+        const evaluateScript = tools.find(t => t.name === 'evaluate_script');
+        assert.strictEqual(evaluateScript, undefined);
+      },
+      ['--no-javascript-evaluation'],
+    );
+  });
+
   it('updates roots when client notifies', async () => {
     const roots = [{uri: 'file:///test-root', name: 'test-root'}];
     let resolvePromise: () => void;
@@ -232,6 +244,51 @@ describe('e2e', () => {
         },
       },
     );
+  });
+
+  it('combines configured filesystem roots with client roots', async () => {
+    const configuredRoot = await fs.promises.mkdtemp(
+      path.join(os.homedir(), '.configured-root-'),
+    );
+    const clientRoot = await fs.promises.mkdtemp(
+      path.join(os.homedir(), '.client-root-'),
+    );
+
+    try {
+      await withClient(
+        async client => {
+          client.setRequestHandler(ListRootsRequestSchema, () => {
+            return {
+              roots: [
+                {uri: pathToFileURL(clientRoot).href, name: 'client-root'},
+              ],
+            };
+          });
+
+          for (const outputPath of [
+            path.join(configuredRoot, 'configured.png'),
+            path.join(clientRoot, 'client.png'),
+          ]) {
+            const result = await client.callTool({
+              name: 'take_screenshot',
+              arguments: {pageId: 1, filePath: outputPath},
+            });
+            assert.strictEqual(result.isError, undefined);
+            const content = result.content as TextContent[];
+            assert.match(content[0].text, /Saved screenshot to/);
+          }
+        },
+        [`--filesystem-root=${configuredRoot}`],
+        {
+          capabilities: {
+            roots: {listChanged: true},
+          },
+        },
+      );
+    } finally {
+      await fs.promises.rm(configuredRoot, {recursive: true, force: true});
+      await fs.promises.rm(clientRoot, {recursive: true, force: true});
+    }
   });
 
   it('denies file access if roots list is empty', async () => {
@@ -490,7 +547,12 @@ function toolShouldBeSkipped(
   filteredOutCategories: ToolCategory[],
 ) {
   if (tool.annotations?.conditions) {
-    return true;
+    for (const condition of tool.annotations.conditions) {
+      const option = mcpOptions[condition as keyof typeof mcpOptions];
+      if (!option || !('default' in option) || option.default !== true) {
+        return true;
+      }
+    }
   }
   if (
     tool.annotations?.category &&

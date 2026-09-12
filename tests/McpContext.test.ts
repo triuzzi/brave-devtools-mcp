@@ -22,13 +22,24 @@ import {type HTTPResponse} from '../src/third_party/index.js';
 import type {TraceResult} from '../src/processors/PerformanceTrace.js';
 import {resolveCanonicalPath} from '../src/utils/files.js';
 
+import {serverHooks} from './server.js';
 import {
+  assertNoServiceWorkerReported,
   getMockRequest,
   html,
   withBrowser,
   withMcpContext,
   stabilizeStructuredContent,
 } from './utils.js';
+
+const EXTENSION_WITH_SW_PATH = path.join(
+  import.meta.dirname,
+  '../../tests/tools/fixtures/extension-sw',
+);
+const EXTENSION_CONTENT_SCRIPT_PATH = path.join(
+  import.meta.dirname,
+  '../../tests/tools/fixtures/extension-content-script',
+);
 
 describe('McpContext', () => {
   afterEach(() => {
@@ -134,6 +145,89 @@ describe('McpContext', () => {
       },
     );
   });
+
+  it('drops pages reaching internal chrome or chrome-untrusted schemes by any route', async () => {
+    await withMcpContext(async (_response, context) => {
+      const page = await context.newPage();
+      const pageId = page.id;
+      assert.strictEqual(context.getPageById(pageId), page);
+
+      const urlStub = sinon
+        .stub(page.pptrPage, 'url')
+        .returns('chrome://settings');
+      try {
+        await context.createPagesSnapshot();
+        const listed = context.getPages();
+        assert.ok(
+          !listed.some(p => p.id === pageId),
+          'page reaching chrome://settings should be dropped from listing',
+        );
+        assert.throws(() => context.getPageById(pageId), /No page found/);
+      } finally {
+        urlStub.restore();
+      }
+    });
+  });
+
+  it('drops pages with chrome-extension schemes unless categoryExtensions is enabled', async () => {
+    await withMcpContext(async (_response, context) => {
+      const page = await context.newPage();
+      const pageId = page.id;
+
+      const urlStub = sinon
+        .stub(page.pptrPage, 'url')
+        .returns('chrome-extension://some-ext-id/popup.html');
+      try {
+        await context.createPagesSnapshot();
+        const listed = context.getPages();
+        assert.ok(
+          !listed.some(p => p.id === pageId),
+          'extension page should be dropped from listing when categoryExtensions is disabled',
+        );
+        assert.throws(() => context.getPageById(pageId), /No page found/);
+      } finally {
+        urlStub.restore();
+      }
+    });
+  });
+
+  it('keeps pages with chrome://newtab/ and chrome://inspect', async () => {
+    await withMcpContext(async (_response, context) => {
+      const page = await context.newPage();
+      const pageId = page.id;
+
+      const newtabStub = sinon
+        .stub(page.pptrPage, 'url')
+        .returns('chrome://newtab/');
+      try {
+        await context.createPagesSnapshot();
+        const listed = context.getPages();
+        assert.ok(
+          listed.some(p => p.id === pageId),
+          'chrome://newtab/ should be kept in listing',
+        );
+        assert.strictEqual(context.getPageById(pageId), page);
+      } finally {
+        newtabStub.restore();
+      }
+
+      const inspectStub = sinon
+        .stub(page.pptrPage, 'url')
+        .returns('chrome://inspect/#devices');
+      try {
+        await context.createPagesSnapshot();
+        const listed = context.getPages();
+        assert.ok(
+          listed.some(p => p.id === pageId),
+          'chrome://inspect should be kept in listing',
+        );
+        assert.strictEqual(context.getPageById(pageId), page);
+      } finally {
+        inspectStub.restore();
+      }
+    });
+  });
+
   it('resolves uid from a non-selected page snapshot', async () => {
     await withMcpContext(async (_response, context) => {
       // Page 1: set content and snapshot
@@ -824,6 +918,104 @@ describe('McpContext', () => {
           assert.strictEqual(result, undefined);
         });
       });
+    });
+  });
+
+  describe('extensions', () => {
+    const server = serverHooks();
+
+    it('manages extension lifecycle (install, list, get, reload, triggerAction, and uninstall)', async () => {
+      await withMcpContext(
+        async (_response, context) => {
+          const extensionId = await context.installExtension(
+            EXTENSION_WITH_SW_PATH,
+          );
+
+          let extensions = await context.listExtensions();
+          assert.ok(
+            extensions.has(extensionId),
+            `Extension with ID "${extensionId}" should be installed`,
+          );
+
+          const extension = await context.getExtension(extensionId);
+          assert.ok(extension, 'Extension should be returned');
+          assert.strictEqual(extension.id, extensionId);
+          assert.strictEqual(extension.path, EXTENSION_WITH_SW_PATH);
+
+          await context.installExtension(extension.path);
+          extensions = await context.listExtensions();
+          assert.ok(
+            extensions.has(extensionId),
+            'Extension should still be installed after reload',
+          );
+
+          const targetsBefore = context.browser.targets();
+          const pageTargetBefore = targetsBefore.find(
+            t => t.type() === 'page' && t.url().includes(extensionId),
+          );
+          assert.ok(!pageTargetBefore, 'Page should not exist before action');
+
+          await context.triggerExtensionAction(extensionId);
+
+          const pageTargetAfter = await context.browser.waitForTarget(
+            t => t.type() === 'page' && t.url().includes(extensionId),
+          );
+          assert.ok(pageTargetAfter, 'Page should exist after action');
+
+          await context.uninstallExtension(extensionId);
+          extensions = await context.listExtensions();
+          assert.ok(
+            !extensions.has(extensionId),
+            `Extension with ID "${extensionId}" should NOT be installed`,
+          );
+
+          const targets = context.browser.targets();
+          assertNoServiceWorkerReported(targets, extensionId);
+        },
+        {},
+        {
+          categoryExtensions: true,
+        },
+      );
+    });
+
+    it('verifies that content script console logs are received', async () => {
+      await withMcpContext(
+        async (_response, context) => {
+          server.addHtmlRoute(
+            '/test-content-script',
+            html`<h1>Test Content Script</h1>`,
+          );
+          const url = server.getRoute('/test-content-script');
+
+          const extensionId = await context.installExtension(
+            EXTENSION_CONTENT_SCRIPT_PATH,
+          );
+
+          const mcpPage = context.getSelectedMcpPage();
+          const page = mcpPage.pptrPage;
+
+          await page.goto(url);
+
+          const messages = mcpPage.getConsoleData(true);
+          const hasContentScriptLog = messages.some(
+            message =>
+              'text' in message &&
+              typeof message.text === 'function' &&
+              message.text().includes('from content script!'),
+          );
+          assert.ok(
+            hasContentScriptLog,
+            'Console output should contain message from content script.',
+          );
+
+          await context.uninstallExtension(extensionId);
+        },
+        {},
+        {
+          categoryExtensions: true,
+        },
+      );
     });
   });
 });

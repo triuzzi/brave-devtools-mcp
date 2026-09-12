@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "brave-devtools": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "--prefix",
+        "${PLUGIN_DATA}",
+        "brave-mcp@1.9.0"
+      ]
+    }
+  }
+}

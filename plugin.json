@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "brave-devtools",
+  "version": "1.9.0",
+  "description": "Reliable Brave automation, debugging, and performance analysis for AI agents.",
+  "author": {
+    "name": "Emanuele Triuzzi"
+  },
+  "homepage": "https://github.com/triuzzi/brave-devtools-mcp",
+  "repository": "https://github.com/triuzzi/brave-devtools-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "browser",
+    "brave",
+    "debugging",
+    "mcp",
+    "performance"
+  ]
+}

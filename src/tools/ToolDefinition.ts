@@ -14,6 +14,7 @@ import type {
   HeapQueryOptions,
 } from '../processors/HeapSnapshotManager.js';
 import type {McpPage} from '../McpPage.js';
+import type {CssFormatterOptions} from '../formatters/CssFormatter.js';
 import {zod} from '../third_party/index.js';
 import type {
   Dialog,
@@ -35,6 +36,7 @@ import type {
   TextSnapshotNode,
   GeolocationOptions,
   ExtensionServiceWorker,
+  CD4ACommentThread,
 } from '../types.js';
 import type {PaginationOptions} from '../types.js';
 import type {
@@ -173,6 +175,10 @@ export interface Response {
       serviceWorkerId?: string;
     },
   ): void;
+  setIncludeCssStyles(
+    matchedStyles: MatchedStyles,
+    options: CssFormatterOptions & PaginationOptions,
+  ): void;
   includeSnapshot(params?: SnapshotParams): void;
   attachImage(value: ImageContentData): void;
   attachNetworkRequest(
@@ -194,6 +200,7 @@ export interface Response {
   setListThirdPartyDeveloperTools(): void;
   setListWebMcpTools(): void;
   attachWaitForResult(result: WaitForEventsResult): void;
+  setDevToolsComments(threads: CD4ACommentThread[]): void;
 }
 
 export type SupportedExtensions =
@@ -322,6 +329,8 @@ export type Context = Readonly<{
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange>;
 }>;
 
+export type MatchedStyles = DevTools.CSSMatchedStyles.CSSMatchedStyles;
+
 /**
  * Only add methods used by tools/*.
  */
@@ -331,11 +340,17 @@ export type ContextPage = Readonly<{
   readonly networkConditions: string | null;
   getAXNodeByUid(uid: string): TextSnapshotNode | undefined;
   getElementByUid(uid: string): Promise<ElementHandle<Element>>;
+  getMatchedStylesForUid(uid: string): Promise<MatchedStyles>;
 
   /**
    * Returns a reqid for a cdpRequestId.
    */
   resolveCdpRequestId(cdpRequestId: string): number | undefined;
+  resolveReqidToCdpRequestId(reqid: number): string | undefined;
+  resolveBackendNodeId(backendNodeId: number): Promise<string | undefined>;
+  resolveUidToBackendNodeId(
+    uid: string,
+  ): Promise<{backendNodeId: number; targetId?: string} | undefined>;
 
   getDialog(): Dialog | undefined;
   clearDialog(): void;
@@ -367,6 +382,8 @@ export type ContextPage = Readonly<{
     viewport?: Viewport;
   }): Promise<void>;
   waitForTextOnPage(text: string[], timeout?: number): Promise<Element>;
+  getDevToolsPage(): Promise<Page | undefined>;
+  openDevTools(): Promise<Page | undefined>;
 }>;
 
 export function defineTool<Schema extends zod.ZodRawShape>(
@@ -492,6 +509,21 @@ export function viewportTransform(arg: string | undefined):
     number,
     number | undefined,
   ];
+  if (!Number.isFinite(width) || width <= 0) {
+    throw new Error(
+      `Invalid viewport width "${width}". Expected format '<width>x<height>x<devicePixelRatio>[,mobile][,touch][,landscape]' with a positive width.`,
+    );
+  }
+  if (!Number.isFinite(height) || height <= 0) {
+    throw new Error(
+      `Invalid viewport height "${height}". Expected format '<width>x<height>x<devicePixelRatio>[,mobile][,touch][,landscape]' with a positive height.`,
+    );
+  }
+  if (dpr !== undefined && (!Number.isFinite(dpr) || dpr <= 0)) {
+    throw new Error(
+      `Invalid devicePixelRatio "${dpr}". Expected a positive number.`,
+    );
+  }
   return {
     width,
     height,
@@ -507,6 +539,16 @@ export function geolocationTransform(arg: string | undefined) {
     return undefined;
   }
   const [latitude, longitude] = arg.split(',').map(Number) as [number, number];
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+    throw new Error(
+      `Invalid latitude "${latitude}". Latitude must be a number between -90 and 90.`,
+    );
+  }
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    throw new Error(
+      `Invalid longitude "${longitude}". Longitude must be a number between -180 and 180.`,
+    );
+  }
   return {
     latitude,
     longitude,
