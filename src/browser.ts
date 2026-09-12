@@ -9,9 +9,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import type {Browser, LaunchOptions, Target} from './third_party/index.js';
+import type {Browser, LaunchOptions} from './third_party/index.js';
 import {puppeteer} from './third_party/index.js';
 import {logger, puppeteerLogger} from './utils/logger.js';
+import {isAllowedUrl} from './utils/url.js';
 
 let browser: Browser | undefined;
 let browserMode: 'launched' | 'connected' | undefined;
@@ -36,35 +37,13 @@ if (
   );
 }
 
-function makeTargetFilter(enableExtensions = false) {
-  const ignoredPrefixes = new Set([
-    'chrome://',
-    'chrome-untrusted://',
-    'brave://',
-  ]);
-  if (!enableExtensions) {
-    ignoredPrefixes.add('chrome-extension://');
-  }
-
-  return function targetFilter(target: Target): boolean {
-    if (
-      target.url() === 'brave://newtab/' ||
-      target.url() === 'chrome://newtab/'
-    ) {
+export function makeTargetFilter(enableExtensions = false) {
+  return function targetFilter(target: {url(): string}): boolean {
+    const url = target.url();
+    if (!url) {
       return true;
     }
-    if (
-      target.url().startsWith('brave://inspect') ||
-      target.url().startsWith('chrome://inspect')
-    ) {
-      return true;
-    }
-    for (const prefix of ignoredPrefixes) {
-      if (target.url().startsWith(prefix)) {
-        return false;
-      }
-    }
-    return true;
+    return isAllowedUrl(url, {categoryExtensions: enableExtensions});
   };
 }
 

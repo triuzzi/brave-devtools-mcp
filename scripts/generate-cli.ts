@@ -10,13 +10,12 @@ import path from 'node:path';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
 
-import {parseArguments} from '../build/src/config/mcp-options.js';
-import {buildFlag} from '../build/src/index.js';
+import {mcpOptions, parseArguments} from '../build/src/config/mcp-options.js';
 import {
-  labels,
-  ToolCategory,
-  OFF_BY_DEFAULT_CATEGORIES,
-} from '../build/src/tools/categories.js';
+  isCategoryOffByDefault,
+  categoryToFlagName,
+} from '../build/src/config/category-options.js';
+import {labels, ToolCategory} from '../build/src/tools/categories.js';
 import {createTools} from '../build/src/tools/tools.js';
 
 const OUTPUT_PATH = path.join(
@@ -166,15 +165,18 @@ async function generateCli() {
     let description = tool.description;
     const requiredFlags: string[] = [];
 
-    const isOffByDefault = OFF_BY_DEFAULT_CATEGORIES.includes(categoryEnum);
+    const isOffByDefault = isCategoryOffByDefault(categoryEnum);
     if (isOffByDefault) {
-      const categoryFlag = buildFlag(categoryEnum);
+      const categoryFlag = categoryToFlagName(categoryEnum);
       requiredFlags.push(`--${categoryFlag}=true`);
     }
 
     const conditions = toolNameToConditions.get(tool.name) || [];
     for (const condition of conditions) {
-      requiredFlags.push(`--${condition}=true`);
+      const option = mcpOptions[condition as keyof typeof mcpOptions];
+      if (!option || !('default' in option) || option.default !== true) {
+        requiredFlags.push(`--${condition}=true`);
+      }
     }
 
     if (requiredFlags.length > 0) {

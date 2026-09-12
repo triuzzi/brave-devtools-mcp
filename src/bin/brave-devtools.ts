@@ -152,7 +152,7 @@ y.command(
         argv.headless = true;
       }
     }
-    const args = serializeArgs(mcpOptions, argv);
+    const args = serializeArgs(getCliOptions(), argv);
     await start(args, argv.sessionId);
     process.exit(0);
   },

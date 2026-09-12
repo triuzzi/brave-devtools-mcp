@@ -6,8 +6,15 @@
 
 import assert from 'node:assert';
 import {describe, it} from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-import {parser} from '../src/config/mcp-options.js';
+import {
+  DEFAULT_FILESYSTEM_ROOT,
+  mcpOptions,
+  parser,
+} from '../src/config/mcp-options.js';
 
 function parseArguments(argv: string[], env: NodeJS.ProcessEnv = {}) {
   return parser('0.0.0', ['node', 'main.js', ...argv], env)
@@ -15,21 +22,42 @@ function parseArguments(argv: string[], env: NodeJS.ProcessEnv = {}) {
     .parseSync();
 }
 
+function createTempFile(content: string, fileName: string) {
+  const filePath = path.join(os.tmpdir(), fileName);
+  fs.writeFileSync(filePath, content);
+  return {
+    path: filePath,
+    [Symbol.dispose]() {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
+
 describe('cli args parsing', () => {
   const defaultArgs = {
+    categoryInput: true,
+    categoryNavigation: true,
     categoryEmulation: true,
     categoryPerformance: true,
     categoryNetwork: true,
-    categoryExtensions: false,
-    categoryExperimentalThirdParty: false,
+    categoryDebugging: true,
+    categoryMemory: true,
     autoConnect: undefined,
     performanceCrux: true,
     usageStatistics: false,
+    javascriptEvaluation: true,
     redactNetworkHeaders: false,
     allowUnrestrictedPaths: false,
+    filesystemRoot: DEFAULT_FILESYSTEM_ROOT,
     memoryDebugging: false,
     experimentalStructuredContent: false,
     pageIdRouting: true,
+    sourceMaps: true,
+    devtoolsComments: false,
   };
 
   it('parses with default args', async () => {
@@ -149,6 +177,46 @@ describe('cli args parsing', () => {
     });
   });
 
+  describe('filesystem roots', () => {
+    it('parses filesystem roots', async () => {
+      const args = parseArguments([
+        '--filesystem-root=/tmp/one',
+        '--filesystem-root=/tmp/two',
+      ]);
+      assert.deepStrictEqual(args.filesystemRoot, ['/tmp/one', '/tmp/two']);
+    });
+
+    it('parses workspace as an alias for filesystem roots', async () => {
+      const args = parseArguments([
+        '--workspace=/tmp/one',
+        '--workspace=/tmp/two',
+      ]);
+      assert.deepStrictEqual(args.filesystemRoot, ['/tmp/one', '/tmp/two']);
+    });
+
+    it('still accepts unrestricted paths without an explicit root', async () => {
+      const args = parseArguments(['--allow-unrestricted-paths']);
+      assert.strictEqual(args.allowUnrestrictedPaths, true);
+    });
+
+    it('lets an explicit workspace override the CLI unrestricted default', async () => {
+      const args = parseArguments(['--viaCli', '--workspace=/tmp/one']);
+      assert.strictEqual(args.allowUnrestrictedPaths, false);
+      assert.deepStrictEqual(args.filesystemRoot, ['/tmp/one']);
+    });
+
+    it('keeps the CLI unrestricted default when no workspace is set', async () => {
+      const args = parseArguments(['--viaCli']);
+      assert.strictEqual(args.allowUnrestrictedPaths, true);
+      assert.strictEqual(args.filesystemRoot, undefined);
+    });
+
+    it('uses yargs default identity to detect an unset CLI workspace', async () => {
+      const args = parseArguments([]);
+      assert.strictEqual(args.filesystemRoot, DEFAULT_FILESYSTEM_ROOT);
+    });
+  });
+
   it('parses ignore Brave args', async () => {
     const args = parseArguments([
       `--ignore-default-brave-arg='--disable-extensions'`,
@@ -231,6 +299,21 @@ describe('cli args parsing', () => {
     });
   });
 
+  it('rejects invalid screencast fps values', async () => {
+    const coerce = mcpOptions.experimentalScreencastFps.coerce;
+    assert.ok(coerce);
+
+    assert.strictEqual(coerce(undefined), undefined);
+    assert.strictEqual(coerce(10), 10);
+
+    for (const value of [0, -1, 10.5, Number.NaN]) {
+      assert.throws(
+        () => coerce(value),
+        /Invalid experimentalScreencastFps .* Expected a positive integer\./,
+      );
+    }
+  });
+
   it('parses usage statistics flag', async () => {
     // Test the privacy-preserving default.
     const defaultArgs = parseArguments(['main.js'], {});
@@ -243,6 +326,20 @@ describe('cli args parsing', () => {
     // Test disabling it
     const disabledArgs = parseArguments(['--no-usage-statistics']);
     assert.strictEqual(disabledArgs.usageStatistics, false);
+  });
+
+  it('parses javascript evaluation flag', async () => {
+    // Test default (should be true).
+    const defaultArgs = parseArguments(['main.js'], {});
+    assert.strictEqual(defaultArgs.javascriptEvaluation, true);
+
+    // Test enabling it
+    const enabledArgs = parseArguments(['--javascript-evaluation']);
+    assert.strictEqual(enabledArgs.javascriptEvaluation, true);
+
+    // Test disabling it
+    const disabledArgs = parseArguments(['--no-javascript-evaluation']);
+    assert.strictEqual(disabledArgs.javascriptEvaluation, false);
   });
 
   it('respects env variable', async () => {
@@ -337,5 +434,89 @@ describe('cli args parsing', () => {
       'https://a.com/*',
       'https://b.com/*',
     ]);
+  });
+
+  it('parses source-maps flag', async () => {
+    const defaultParsed = parseArguments(['main.js']);
+    assert.strictEqual(defaultParsed.sourceMaps, true);
+
+    const disabledArgs = parseArguments(['--no-source-maps']);
+    assert.strictEqual(disabledArgs.sourceMaps, false);
+
+    const explicitFalseArgs = parseArguments(['--source-maps=false']);
+    assert.strictEqual(explicitFalseArgs.sourceMaps, false);
+
+    const explicitTrueArgs = parseArguments(['--source-maps=true']);
+    assert.strictEqual(explicitTrueArgs.sourceMaps, true);
+  });
+
+  it('parses config option', async () => {
+    using testConfig = createTempFile(
+      JSON.stringify({
+        headless: true,
+        categoryInput: false,
+        blockedUrlPattern: ['https://example.com/*'],
+      }),
+      'cd4a.test.config.json',
+    );
+    const args = parseArguments(['--config', testConfig.path]);
+    assert.strictEqual(args.config, testConfig.path);
+    assert.strictEqual(args.headless, true);
+    assert.strictEqual(args.categoryInput, false);
+    assert.deepStrictEqual(args.blockedUrlPattern, ['https://example.com/*']);
+  });
+
+  it('parses config option mixed with cli arguments', async () => {
+    using testConfig = createTempFile(
+      JSON.stringify({
+        headless: true,
+        categoryInput: false,
+      }),
+      'cd4a.test.config.mixed.json',
+    );
+    const args = parseArguments([
+      '--config',
+      testConfig.path,
+      '--headless=false',
+      '--category-network=false',
+    ]);
+    assert.strictEqual(args.config, testConfig.path);
+    assert.strictEqual(args.headless, false);
+    assert.strictEqual(args.categoryInput, false);
+    assert.strictEqual(args.categoryNetwork, false);
+    assert.strictEqual(args.categoryMemory, true);
+  });
+
+  it('parses config should not allow no prefix', async () => {
+    using testConfig = createTempFile(
+      JSON.stringify({
+        headless: true,
+        'no-category-memory': true,
+      }),
+      'cd4a.test.config.mixed.json',
+    );
+    assert.throws(
+      () => parseArguments(['--config', testConfig.path]),
+      /Invalid JSON config file: Unknown argument: no-category-memory/,
+    );
+  });
+
+  it('parses config should not allow dashed property', async () => {
+    using testConfig = createTempFile(
+      JSON.stringify({
+        headless: true,
+        'category-memory': false,
+      }),
+      'cd4a.test.config.mixed.json',
+    );
+    assert.throws(
+      () => parseArguments(['--config', testConfig.path]),
+      /Invalid JSON config file: Unknown argument: category-memory/,
+    );
+  });
+
+  it('parses with devtoolsComments enabled', async () => {
+    const args = parseArguments(['--devtoolsComments']);
+    assert.strictEqual(args.devtoolsComments, true);
   });
 });
