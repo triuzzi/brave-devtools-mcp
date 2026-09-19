@@ -102,7 +102,7 @@ You can disable these update checks by setting `BRAVE_DEVTOOLS_MCP_NO_UPDATE_CHE
 ## Requirements
 
 - [Node.js](https://nodejs.org/) [LTS](https://github.com/nodejs/Release#release-schedule) version.
-- [Brave](https://brave.com/download/) current release or newer.
+- [Brave](https://brave.com/download/) current release or newer. On Linux, automatic discovery also finds the `Brave-Origin` profile used by Manjaro's `brave-origin-bin` package — see [Advanced usage](./docs/advanced-usage.md).
 - [npm](https://www.npmjs.com/)
 
 ## Getting started
