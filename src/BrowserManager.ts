@@ -17,6 +17,32 @@ import {isAllowedUrl} from './utils/url.js';
 
 type Channel = NonNullable<ParsedArguments['channel']>;
 
+export function linuxBraveExecutableCandidates(channel: Channel): string[] {
+  const paths: Record<Channel, string[]> = {
+    release: [
+      'brave-browser',
+      'brave-browser-stable',
+      'brave-origin',
+      '/opt/brave-origin-bin/brave',
+    ],
+    beta: ['brave-browser-beta'],
+    nightly: ['brave-browser-nightly'],
+  };
+  return paths[channel];
+}
+
+function isExecutableFile(candidate: string): boolean {
+  try {
+    if (!fs.statSync(candidate).isFile()) {
+      return false;
+    }
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Node runs a timer whose delay exceeds 2^31-1 ms after 1 ms instead, which
 // would make every CDP call and tool call time out at once.
 const MAXIMUM_TIMER_DELAY_MILLISECONDS = 2_147_483_647;
@@ -79,21 +105,22 @@ export function resolveBraveExecutablePath(
   }
 
   if (platform === 'linux') {
-    const paths: Record<Channel, string[]> = {
-      release: ['brave-browser', 'brave-browser-stable'],
-      beta: ['brave-browser-beta'],
-      nightly: ['brave-browser-nightly'],
-    };
-    for (const candidate of paths[channel]) {
-      try {
-        const resolvedPath = execSync(`which ${candidate}`, {
-          encoding: 'utf8',
-        }).trim();
-        if (resolvedPath) {
+    for (const candidate of linuxBraveExecutableCandidates(channel)) {
+      if (path.isAbsolute(candidate)) {
+        if (isExecutableFile(candidate)) {
+          return candidate;
+        }
+        continue;
+      }
+
+      for (const pathEntry of (process.env['PATH'] ?? '').split(path.delimiter)) {
+        if (!pathEntry) {
+          continue;
+        }
+        const resolvedPath = path.join(pathEntry, candidate);
+        if (isExecutableFile(resolvedPath)) {
           return resolvedPath;
         }
-      } catch {
-        // try next candidate
       }
     }
     throw new Error(
@@ -155,10 +182,25 @@ export function resolveBraveUserDataDirectory(
   if (platform === 'linux') {
     const configDirectory =
       process.env['XDG_CONFIG_HOME'] ?? path.join(homeDirectory, '.config');
-    return path.join(
-      configDirectory,
-      'BraveSoftware',
-      profileDirectoryNames[channel],
+    const profileDirectories =
+      channel === 'release'
+        ? [
+            path.join(configDirectory, 'BraveSoftware', 'Brave-Browser'),
+            path.join(configDirectory, 'BraveSoftware', 'Brave-Origin'),
+          ]
+        : [
+            path.join(
+              configDirectory,
+              'BraveSoftware',
+              profileDirectoryNames[channel],
+            ),
+          ];
+    return (
+      profileDirectories.find(candidate =>
+        fs.existsSync(path.join(candidate, 'DevToolsActivePort')),
+      ) ??
+      profileDirectories.find(candidate => fs.existsSync(candidate)) ??
+      profileDirectories[0]
     );
   }
 
