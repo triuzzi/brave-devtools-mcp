@@ -35,7 +35,9 @@ if (
   );
 }
 
-function resolveBraveExecutablePath(channel: Channel = 'release'): string {
+export function resolveBraveExecutablePath(
+  channel: Channel = 'release',
+): string {
   const environmentPath = process.env['BRAVE_PATH'];
   if (environmentPath) {
     if (!fs.existsSync(environmentPath)) {
@@ -117,7 +119,9 @@ function resolveBraveExecutablePath(channel: Channel = 'release'): string {
   throw new Error(`Unsupported platform: ${platform}`);
 }
 
-function resolveBraveUserDataDirectory(channel: Channel = 'release'): string {
+export function resolveBraveUserDataDirectory(
+  channel: Channel = 'release',
+): string {
   const platform = os.platform();
   const homeDirectory = os.homedir();
   const profileDirectoryNames: Record<Channel, string> = {

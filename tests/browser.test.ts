@@ -5,6 +5,7 @@
  */
 
 import assert from 'node:assert';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {afterEach, beforeEach, describe, it} from 'node:test';
@@ -12,7 +13,12 @@ import {afterEach, beforeEach, describe, it} from 'node:test';
 import {executablePath} from 'puppeteer';
 import sinon from 'sinon';
 
-import {BrowserManager} from '../src/BrowserManager.js';
+import {
+  BrowserManager,
+  PROTOCOL_TIMEOUT_MILLISECONDS,
+  resolveBraveExecutablePath,
+  resolveBraveUserDataDirectory,
+} from '../src/BrowserManager.js';
 import {puppeteer, type Browser} from '../src/third_party/index.js';
 
 import {
@@ -20,6 +26,7 @@ import {
   createMockPuppeteerBrowser,
 } from './mocks.js';
 import {serverHooks} from './server.js';
+import {createTempDir} from './utils.js';
 
 const TEST_BROWSER_EXECUTABLE_PATH =
   process.env.PUPPETEER_EXECUTABLE_PATH ?? (await executablePath());
@@ -109,6 +116,7 @@ describe('browser', () => {
       sinon.assert.calledWithMatch(launchStub, {
         channel: undefined,
         executablePath: process.execPath,
+        protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
         headless: true,
         args: [
           '--custom-arg',
@@ -176,11 +184,45 @@ describe('browser', () => {
       sinon.assert.notCalled(launchStub);
       sinon.assert.calledWithMatch(connectStub, {
         browserURL: 'http://127.0.0.1:9222',
+        protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
       });
 
       await manager.close();
       sinon.assert.calledOnceWithExactly(pptrBrowser.disconnect);
       sinon.assert.notCalled(pptrBrowser.close);
+    });
+
+    it('autoConnect reads DevToolsActivePort from the Brave profile of the channel', async () => {
+      using homeDirectory = createTempDir('brave-devtools-test-home-');
+      sinon.stub(os, 'platform').returns('darwin');
+      sinon.stub(os, 'homedir').returns(homeDirectory.path);
+      const profileDirectory = path.join(
+        homeDirectory.path,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser-Nightly',
+      );
+      fs.mkdirSync(profileDirectory, {recursive: true});
+      fs.writeFileSync(
+        path.join(profileDirectory, 'DevToolsActivePort'),
+        '9333\n/devtools/browser/brave-test\n',
+      );
+      const pptrBrowser = createMockPuppeteerBrowser();
+      const connectStub = sinon
+        .stub(puppeteer, 'connect')
+        .resolves(pptrBrowser);
+      const manager = new BrowserManager(
+        createMockParsedArguments({autoConnect: true, channel: 'nightly'}),
+      );
+
+      await manager.ensureBrowser();
+
+      sinon.assert.calledOnceWithMatch(connectStub, {
+        browserWSEndpoint: 'ws://127.0.0.1:9333/devtools/browser/brave-test',
+        channel: undefined,
+        protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
+      });
     });
 
     it('deduplicates concurrent ensureBrowser() calls while launch is in-flight', async () => {
@@ -603,6 +645,142 @@ describe('browser', () => {
         assert.strictEqual(second, secondBrowser);
         sinon.assert.calledTwice(launchStub);
       });
+    });
+  });
+
+  describe('Brave discovery', () => {
+    const environmentKeys = [
+      'BRAVE_PATH',
+      'PROGRAMFILES',
+      'LOCALAPPDATA',
+      'XDG_CONFIG_HOME',
+    ];
+    let originalEnvironment: Record<string, string | undefined>;
+
+    beforeEach(() => {
+      originalEnvironment = Object.fromEntries(
+        environmentKeys.map(key => [key, process.env[key]]),
+      );
+      for (const key of environmentKeys) {
+        delete process.env[key];
+      }
+    });
+
+    afterEach(() => {
+      for (const [key, value] of Object.entries(originalEnvironment)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    });
+
+    const macExecutables = {
+      release: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+      beta: '/Applications/Brave Browser Beta.app/Contents/MacOS/Brave Browser Beta',
+      nightly:
+        '/Applications/Brave Browser Nightly.app/Contents/MacOS/Brave Browser Nightly',
+    } as const;
+    for (const channel of ['release', 'beta', 'nightly'] as const) {
+      it(`finds the ${channel} executable on macOS`, () => {
+        sinon.stub(os, 'platform').returns('darwin');
+        sinon
+          .stub(fs, 'existsSync')
+          .callsFake(candidate => candidate === macExecutables[channel]);
+        assert.strictEqual(
+          resolveBraveExecutablePath(channel),
+          macExecutables[channel],
+        );
+      });
+    }
+
+    it('prefers Program Files over LOCALAPPDATA on Windows', () => {
+      sinon.stub(os, 'platform').returns('win32');
+      process.env['PROGRAMFILES'] = '/program-files';
+      process.env['LOCALAPPDATA'] = '/local-app-data';
+      const [programFilesExecutable, localExecutable] = [
+        '/program-files',
+        '/local-app-data',
+      ].map(baseDirectory =>
+        path.join(
+          baseDirectory,
+          'BraveSoftware',
+          'Brave-Browser-Beta',
+          'Application',
+          'brave.exe',
+        ),
+      );
+      const existsSync = sinon.stub(fs, 'existsSync').returns(false);
+      existsSync.withArgs(localExecutable).returns(true);
+      assert.strictEqual(resolveBraveExecutablePath('beta'), localExecutable);
+      existsSync.withArgs(programFilesExecutable).returns(true);
+      assert.strictEqual(
+        resolveBraveExecutablePath('beta'),
+        programFilesExecutable,
+      );
+    });
+
+    it('uses BRAVE_PATH before the install locations', () => {
+      process.env['BRAVE_PATH'] = process.execPath;
+      assert.strictEqual(
+        resolveBraveExecutablePath('nightly'),
+        process.execPath,
+      );
+    });
+
+    it('explains how to fix a missing Brave install', () => {
+      sinon.stub(os, 'platform').returns('darwin');
+      sinon.stub(fs, 'existsSync').returns(false);
+      assert.throws(
+        () => resolveBraveExecutablePath('nightly'),
+        /Could not find Brave Browser \(nightly\).*BRAVE_PATH/,
+      );
+    });
+
+    it('resolves the profile directory of each platform and channel', () => {
+      sinon.stub(os, 'homedir').returns('/home/brave-user');
+      const platform = sinon.stub(os, 'platform');
+
+      platform.returns('darwin');
+      assert.strictEqual(
+        resolveBraveUserDataDirectory('release'),
+        path.join(
+          '/home/brave-user',
+          'Library',
+          'Application Support',
+          'BraveSoftware',
+          'Brave-Browser',
+        ),
+      );
+
+      platform.returns('linux');
+      assert.strictEqual(
+        resolveBraveUserDataDirectory('beta'),
+        path.join(
+          '/home/brave-user',
+          '.config',
+          'BraveSoftware',
+          'Brave-Browser-Beta',
+        ),
+      );
+      process.env['XDG_CONFIG_HOME'] = '/xdg-config';
+      assert.strictEqual(
+        resolveBraveUserDataDirectory('nightly'),
+        path.join('/xdg-config', 'BraveSoftware', 'Brave-Browser-Nightly'),
+      );
+
+      platform.returns('win32');
+      process.env['LOCALAPPDATA'] = '/local-app-data';
+      assert.strictEqual(
+        resolveBraveUserDataDirectory('release'),
+        path.join(
+          '/local-app-data',
+          'BraveSoftware',
+          'Brave-Browser',
+          'User Data',
+        ),
+      );
     });
   });
 
