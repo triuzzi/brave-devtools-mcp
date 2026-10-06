@@ -152,6 +152,7 @@ export class McpPage implements ContextPage {
   #locatorClass: typeof Locator;
   #navigationTimeout: number;
   #sourceMaps: boolean;
+  #emulateFocusedPages: boolean;
   #commentBridge?: DevToolsCommentBridge;
   #onNotification?: (message: string) => void;
 
@@ -164,6 +165,7 @@ export class McpPage implements ContextPage {
       isolatedContextName?: string;
       navigationTimeout?: number;
       sourceMaps?: boolean;
+      emulateFocusedPages?: boolean;
       onNotification?: (message: string) => void;
     },
   ) {
@@ -171,6 +173,7 @@ export class McpPage implements ContextPage {
     this.#locatorClass = options.locatorClass;
     this.#navigationTimeout = options.navigationTimeout ?? NAVIGATION_TIMEOUT;
     this.#sourceMaps = options.sourceMaps ?? true;
+    this.#emulateFocusedPages = options.emulateFocusedPages ?? true;
     this.#onNotification = options.onNotification;
     this.target = target;
     this.id = id;
@@ -296,7 +299,11 @@ export class McpPage implements ContextPage {
   }
 
   async #initFocusEmulationNoThrow(): Promise<void> {
-    // We emulate a focused page for all pages to support multi-agent workflows.
+    if (!this.#emulateFocusedPages) {
+      return;
+    }
+    // Emulate a focused page so multi-agent workflows see focused document APIs.
+    // Disabled via --no-emulate-focused-pages when sharing a visible desktop window.
     void this.pptrPage.emulateFocusedPage(true).catch(error => {
       logger?.('Error turning on focused page emulation', error);
     });

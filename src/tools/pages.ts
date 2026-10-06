@@ -113,7 +113,9 @@ export const newPage = defineTool((args: ParsedArguments) => {
         .boolean()
         .optional()
         .describe(
-          'Whether to open the page in the background without bringing it to the front. Default is false (foreground).',
+          args?.backgroundPages
+            ? 'Whether to open the page in the background without bringing it to the front. Default is true when the server was started with --background-pages.'
+            : 'Whether to open the page in the background without bringing it to the front. Default is false (foreground).',
         ),
       isolatedContext: zod
         .string()
