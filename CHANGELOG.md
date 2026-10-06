@@ -8,14 +8,23 @@
   that release: `evaluate_script` running local script files, the `--fileNavigations` flag to
   reject `file:` navigations, the `analyze_heapsnapshot_contexts` memory tool, leaner text
   snapshots, config-file discovery, config defaults resolved after the CLI and config file are
-  merged, tool calls that fail fast after the browser connection dies, and URL patterns with
-  regexp or named groups rejected instead of silently unenforced
+  merged, a dead browser connection dropped and re-established on the next tool call, and URL
+  patterns with regexp or named groups rejected instead of silently unenforced
 * the CLI daemon runs the MCP server in-process instead of spawning a child server
+* CLI tool commands that start the daemon on their own launch an isolated, temporary profile,
+  like `brave-devtools start`; run `brave-devtools start --isolated=false` to keep the
+  persistent `~/.cache/brave-devtools-mcp-cli/brave-profile`
+* conflicting options stop the server at startup instead of being ignored: `--categoryExtensions`
+  with `--autoConnect`, `--browserUrl` or `--wsEndpoint`, and `--allowUnrestrictedPaths` with
+  `--workspace`
 * browser launch and connection live in the `BrowserManager` class, which carries Brave's
   executable, profile and `DevToolsActivePort` discovery
 
 ### Brave
 
+* a tool call is never cut off before the CDP protocol timeout
+  (`BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS`, 10 minutes by default), so heavy pages don't hit
+  upstream's new 60-second tool-call limit, which would also close the browser
 * config-file discovery reads `bd4a.config.json` from the working directory or `$PLUGIN_DATA`,
   then the global `$XDG_CONFIG_HOME/bd4a/config.json` (`%LOCALAPPDATA%\bd4a\config.json` on
   Windows, `~/.config/bd4a/config.json` as the fallback); set
