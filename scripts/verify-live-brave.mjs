@@ -7,8 +7,8 @@
 import assert from 'node:assert/strict';
 import process from 'node:process';
 
-import {Client} from '@modelcontextprotocol/sdk/client/index.js';
-import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
+import {Client} from '@modelcontextprotocol/client';
+import {StdioClientTransport} from '@modelcontextprotocol/client/stdio';
 
 const browserUrl = process.env.BRAVE_BROWSER_URL ?? 'http://127.0.0.1:9222';
 const syntheticPageMarker = `brave-parity-${process.pid}`;
@@ -50,6 +50,7 @@ let syntheticPageIds = [];
 try {
   const {tools} = await client.listTools();
   const expectedAttachModeTools = [
+    'analyze_heapsnapshot_contexts',
     'click',
     'close_heapsnapshot',
     'close_page',
@@ -60,6 +61,7 @@ try {
     'fill',
     'fill_form',
     'get_console_message',
+    'get_css_styles',
     'get_heapsnapshot_class_nodes',
     'get_heapsnapshot_details',
     'get_heapsnapshot_dominators',
@@ -82,6 +84,7 @@ try {
     'performance_start_trace',
     'performance_stop_trace',
     'press_key',
+    'query_heapsnapshot_objects',
     'resize_page',
     'select_page',
     'take_heapsnapshot',
@@ -146,6 +149,7 @@ try {
   const evaluationResult = await client.callTool({
     name: 'evaluate_script',
     arguments: {
+      pageId: syntheticPage.id,
       function: `() => {
         console.error('${syntheticPageMarker}');
         const browserIdentity = navigator.brave ? 'brave' : 'other';
@@ -162,7 +166,7 @@ try {
 
   const consoleResult = await client.callTool({
     name: 'list_console_messages',
-    arguments: {includeStackTraces: true},
+    arguments: {pageId: syntheticPage.id, includeStackTraces: true},
   });
   assert.match(
     textFromToolResult(consoleResult),
