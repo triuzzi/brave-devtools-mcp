@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import {PROTOCOL_TIMEOUT_MILLISECONDS} from './BrowserManager.js';
 import type {ParsedArguments} from './config/ConfigParser.js';
 import type {McpContext} from './McpContext.js';
 import type {McpPage} from './McpPage.js';
@@ -36,8 +37,16 @@ import {isLocalhost} from './utils/url.js';
  * bound turns that into a fast, clear error instead, and forgets the cached
  * browser handle so the next call reconnects rather than reusing a handle
  * that still looks connected.
+ *
+ * Never shorter than the CDP protocol timeout: heavy pages keep CDP calls
+ * busy for minutes (see PROTOCOL_TIMEOUT_MILLISECONDS), and timing out here
+ * also closes a launched browser, so BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS bounds
+ * both.
  */
-export const TOOL_CALL_TIMEOUT_MS = 60_000;
+export const TOOL_CALL_TIMEOUT_MS = Math.max(
+  60_000,
+  PROTOCOL_TIMEOUT_MILLISECONDS,
+);
 
 class ToolCallTimeoutError extends Error {}
 

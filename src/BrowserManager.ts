@@ -23,7 +23,7 @@ type Channel = NonNullable<ParsedArguments['channel']>;
 // marked dead and every subsequent call throws — only daemon restart
 // recovers. Bumping the ceiling to 10min covers realistic loads;
 // override via env for power users.
-const PROTOCOL_TIMEOUT_MILLISECONDS = Number(
+export const PROTOCOL_TIMEOUT_MILLISECONDS = Number(
   process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS ?? '600000',
 );
 if (

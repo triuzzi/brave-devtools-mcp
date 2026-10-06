@@ -18,6 +18,7 @@ import {McpPage} from '../src/McpPage.js';
 import {McpResponse, type DataFormat} from '../src/McpResponse.js';
 import {ClearcutLogger} from '../src/telemetry/ClearcutLogger.js';
 import {zod} from '../src/third_party/index.js';
+import {PROTOCOL_TIMEOUT_MILLISECONDS} from '../src/BrowserManager.js';
 import {TOOL_CALL_TIMEOUT_MS, ToolHandler} from '../src/ToolHandler.js';
 import {ToolCategory} from '../src/tools/categories.js';
 import {
@@ -1364,6 +1365,10 @@ describe('ToolHandler', () => {
       filePath: undefined,
       filePaths: [],
     });
+  });
+
+  it('never cuts a tool call off before the CDP protocol timeout', () => {
+    assert.ok(TOOL_CALL_TIMEOUT_MS >= PROTOCOL_TIMEOUT_MILLISECONDS);
   });
 
   it('times out a hung tool handler, fails fast, and forgets the browser', async () => {
