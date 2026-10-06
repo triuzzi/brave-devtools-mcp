@@ -596,6 +596,8 @@ export class McpContext implements Context, BrowserlessContext {
     background?: boolean,
     isolatedContextName?: string,
   ): Promise<McpPage> {
+    const openInBackground =
+      background ?? (this.#options.backgroundPages ? true : undefined);
     let page: Page;
     if (isolatedContextName !== undefined) {
       let ctx = this.#isolatedContexts.get(isolatedContextName);
@@ -603,9 +605,9 @@ export class McpContext implements Context, BrowserlessContext {
         ctx = await this.browser.createBrowserContext();
         this.#isolatedContexts.set(isolatedContextName, ctx);
       }
-      page = await ctx.newPage({background});
+      page = await ctx.newPage({background: openInBackground});
     } else {
-      page = await this.browser.newPage({background});
+      page = await this.browser.newPage({background: openInBackground});
     }
     const mcpPage = this.#createMcpPage(page.target());
     await mcpPage.init({emulateFocus: true});

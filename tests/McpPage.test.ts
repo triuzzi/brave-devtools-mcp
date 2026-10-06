@@ -568,6 +568,21 @@ describe('McpPage', () => {
       sinon.assert.calledOnceWithExactly(recorder.stop);
       assert.strictEqual(mcpPage.getScreenRecorder(), null);
     });
+
+    it('skips focused-page emulation when emulateFocusedPages is false', async () => {
+      const pptrPage = createMockPuppeteerPage();
+      pptrPage.emulateFocusedPage.resolves();
+      const target = createMockPuppeteerTarget({page: pptrPage});
+      const mcpPage = new McpPage(target, 1, {
+        hasNetworkBlockOrAllowlist: false,
+        locatorClass: Locator,
+        emulateFocusedPages: false,
+      });
+
+      await mcpPage.init();
+
+      sinon.assert.notCalled(pptrPage.emulateFocusedPage);
+    });
   });
 
   describe('focus emulation', () => {

@@ -234,6 +234,7 @@ export class McpPage implements ContextPage {
   #locatorClass: typeof Locator;
   #navigationTimeout: number;
   #config: ReadonlyServerConfig;
+  #emulateFocusedPages: boolean;
   #commentBridge?: DevToolsCommentBridge;
   #networkOverrideManager?: NetworkOverrideManager;
 
@@ -250,6 +251,8 @@ export class McpPage implements ContextPage {
     this.#config = options.config;
     this.#locatorClass = options.locatorClass;
     this.#navigationTimeout = options.navigationTimeout ?? NAVIGATION_TIMEOUT;
+    this.#emulateFocusedPages =
+      options.config.resolved.emulateFocusedPages ?? true;
     this.target = target;
     this.id = id;
     this.isolatedContextName = options.isolatedContextName;
@@ -411,6 +414,9 @@ export class McpPage implements ContextPage {
   }
 
   #initFocusEmulationNoThrow(): void {
+    if (!this.#emulateFocusedPages) {
+      return;
+    }
     // Background pages need emulated focus for multi-agent workflows.
     void this.pptrPage.emulateFocusedPage(true).catch(error => {
       // Allow the next page operation to retry a transient failure.
