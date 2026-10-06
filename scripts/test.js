@@ -93,7 +93,10 @@ async function runTests(attempt) {
         BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: true,
         BRAVE_DEVTOOLS_MCP_CRASH_ON_UNCAUGHT: true,
         BRAVE_DEVTOOLS_MCP_NO_UPDATE_CHECKS: true,
-        ...(process.env['RUNNER_DEBUG'] === '1' ? {DEBUG: 'puppeteer:*'} : {}),
+        BRAVE_DEVTOOLS_MCP_NO_CONFIG_DISCOVERY: true,
+        ...(process.env['RUNNER_DEBUG'] === '1'
+          ? {NODE_DEBUG: 'puppeteer:*'}
+          : {}),
       },
     });
 

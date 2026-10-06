@@ -98,6 +98,14 @@ jobs:
       - name: Verify MCP metadata
         run: npm run verify-server-json-version
 
+      - name: Remove node_modules
+        run: rm -rf node_modules
+
+      - name: Smoke test bundled binaries
+        run: |
+          node ./build/src/bin/brave-devtools-mcp.js --version
+          node ./build/src/bin/brave-devtools.js --version
+
   create-draft-release:
     name: Create draft GitHub release
     needs: verify-release

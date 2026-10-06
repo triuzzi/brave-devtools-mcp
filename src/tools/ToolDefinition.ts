@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {ParsedArguments} from '../config/mcp-options.js';
+import type {ParsedArguments} from '../config/ConfigParser.js';
 import type {
   HeapSnapshotAggregateData,
   HeapSnapshotClassDiff,
@@ -14,7 +14,9 @@ import type {
   HeapQueryOptions,
 } from '../processors/HeapSnapshotManager.js';
 import type {McpPage} from '../McpPage.js';
+import type {DevToolsCommentBridge} from '../devtools/DevToolsCommentBridge.js';
 import type {CssFormatterOptions} from '../formatters/CssFormatter.js';
+import type {ContextFilterOptions} from '../formatters/HeapSnapshotFormatter.js';
 import {zod} from '../third_party/index.js';
 import type {
   Dialog,
@@ -35,9 +37,9 @@ import type {InsightName, TraceResult} from '../processors/PerformanceTrace.js';
 import type {
   TextSnapshotNode,
   GeolocationOptions,
-  ExtensionServiceWorker,
   CD4ACommentThread,
 } from '../types.js';
+import type {McpWorker} from '../McpWorker.js';
 import type {PaginationOptions} from '../types.js';
 import type {
   WaitForEventsResult,
@@ -54,6 +56,22 @@ export type FileVerificationOption =
       remote?: boolean;
     };
 
+type AllKeys<T> = T extends unknown ? keyof T : never;
+
+type ExtractSchemaField<Schema, K extends PropertyKey> = Schema extends unknown
+  ? K extends keyof Schema
+    ? Exclude<Schema[K], undefined>
+    : never
+  : never;
+
+export type MergeSchema<Schema extends zod.ZodRawShape> = {
+  [K in AllKeys<Schema>]: K extends keyof Schema
+    ? undefined extends Schema[K]
+      ? zod.ZodOptional<ExtractSchemaField<Schema, K>>
+      : Schema[K]
+    : zod.ZodOptional<ExtractSchemaField<Schema, K>>;
+};
+
 export interface BaseToolDefinition<
   Schema extends zod.ZodRawShape = zod.ZodRawShape,
 > {
@@ -66,26 +84,37 @@ export interface BaseToolDefinition<
      * If true, the tool does not modify its environment.
      */
     readOnlyHint: boolean;
-    conditions?: string[];
+    /**
+     * If `'slim'` is included, the tool is only available with `--slim`. Tools
+     * without `'slim'` are only available without `--slim`. Slim tools may
+     * reuse the names of other tools, see {@link isAvailableInMode}.
+     */
+    conditions?: Array<keyof ParsedArguments>;
   };
   schema: Schema;
   blockedByDialog: boolean;
-  verifyFilesSchema: Partial<Record<keyof Schema, FileVerificationOption>>;
+  verifyFilesSchema: Partial<
+    Record<keyof MergeSchema<Schema>, FileVerificationOption>
+  >;
 }
 
 export interface ToolDefinition<
   Schema extends zod.ZodRawShape = zod.ZodRawShape,
 > extends BaseToolDefinition<Schema> {
   schema: Schema;
-  handler: (
+  handler(
     request: Request<Schema>,
     response: Response,
     context: Context,
-  ) => Promise<void>;
+  ): Promise<void>;
 }
 
+export type SchemaType<T extends zod.ZodRawShape> = zod.output<
+  zod.ZodObject<MergeSchema<T>>
+>;
+
 export interface Request<Schema extends zod.ZodRawShape> {
-  params: zod.objectOutputType<Schema, zod.ZodTypeAny>;
+  params: SchemaType<Schema>;
 }
 
 export interface ImageContentData {
@@ -156,6 +185,10 @@ export interface Response {
   ): void;
   setHeapSnapshotObjectDetails(
     objectInfo: DevTools.HeapSnapshotModel.HeapSnapshotModel.ObjectInfo,
+  ): void;
+  setHeapSnapshotContextAnalysis(
+    analysis: DevTools.HeapSnapshotModel.HeapSnapshotModel.ContextAnalysisResult,
+    options?: PaginationOptions & ContextFilterOptions,
   ): void;
   setIncludePages(value: boolean): void;
   setIncludeNetworkRequests(
@@ -248,6 +281,7 @@ export type Context = Readonly<{
     clientProvidedFilePath: string,
     extension: SupportedExtensions,
   ): Promise<{filename: string}>;
+  loadResource(path: string): Promise<string>;
 
   getScreenRecorder(): {recorder: ScreenRecorder; filePath: string} | null;
   setScreenRecorder(
@@ -259,10 +293,8 @@ export type Context = Readonly<{
   listExtensions(): Promise<Map<string, Extension>>;
   getExtension(id: string): Promise<Extension | undefined>;
   getSelectedMcpPage(): McpPage;
-  getExtensionServiceWorkers(): ExtensionServiceWorker[];
-  getExtensionServiceWorkerId(
-    extensionServiceWorker: ExtensionServiceWorker,
-  ): string | undefined;
+  getWorkers(): McpWorker[];
+  getWorkerById(id: string): McpWorker | undefined;
   getHeapSnapshotAggregates(
     filePath: string,
     filterName?: string,
@@ -297,6 +329,9 @@ export type Context = Readonly<{
     filePath: string,
     nodeId: number,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ObjectInfo>;
+  analyzeHeapSnapshotContexts(
+    filePath: string,
+  ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ContextAnalysisResult>;
   closeHeapSnapshot(filePath: string): Promise<boolean>;
   getHeapSnapshotRetainingPaths(
     filePath: string,
@@ -338,6 +373,7 @@ export type ContextPage = Readonly<{
   readonly pptrPage: Page;
   readonly cpuThrottlingRate: number;
   readonly networkConditions: string | null;
+  init(): Promise<void>;
   getAXNodeByUid(uid: string): TextSnapshotNode | undefined;
   getElementByUid(uid: string): Promise<ElementHandle<Element>>;
   getMatchedStylesForUid(uid: string): Promise<MatchedStyles>;
@@ -356,7 +392,7 @@ export type ContextPage = Readonly<{
   clearDialog(): void;
   throwIfDialogOpen(): void;
   waitForEventsAfterAction(
-    action: () => Promise<unknown>,
+    action: (signal: AbortSignal) => Promise<unknown>,
     options?: {
       timeout?: number;
       waitForStableDom?: boolean;
@@ -384,87 +420,52 @@ export type ContextPage = Readonly<{
   waitForTextOnPage(text: string[], timeout?: number): Promise<Element>;
   getDevToolsPage(): Promise<Page | undefined>;
   openDevTools(): Promise<Page | undefined>;
+  ensureDevToolsCommentBridge(
+    devtoolsPage: Page,
+  ): Promise<DevToolsCommentBridge>;
 }>;
 
 export function defineTool<Schema extends zod.ZodRawShape>(
-  definition: ToolDefinition<Schema>,
-): ToolDefinition<Schema>;
-
-export function defineTool<
-  Schema extends zod.ZodRawShape,
-  Args extends ParsedArguments = ParsedArguments,
->(
-  definition: (args?: Args) => ToolDefinition<Schema>,
-): (args?: Args) => ToolDefinition<Schema>;
-
-export function defineTool<
-  Schema extends zod.ZodRawShape,
-  Args extends ParsedArguments = ParsedArguments,
->(
-  definition:
-    ToolDefinition<Schema> | ((args?: Args) => ToolDefinition<Schema>),
-) {
-  if (typeof definition === 'function') {
-    const factory = definition;
-    return (args: Args) => {
-      return factory(args);
-    };
-  }
+  definition: (args: ParsedArguments) => ToolDefinition<Schema>,
+): (args: ParsedArguments) => ToolDefinition<Schema> {
   return definition;
 }
 
 interface PageToolDefinition<
   Schema extends zod.ZodRawShape = zod.ZodRawShape,
 > extends BaseToolDefinition<Schema> {
-  handler: (
+  handler(
     request: Request<Schema> & {page: ContextPage},
     response: Response,
     context: Context,
-  ) => Promise<void>;
+  ): Promise<void>;
 }
 
 export type DefinedPageTool<Schema extends zod.ZodRawShape = zod.ZodRawShape> =
-  PageToolDefinition<Schema> & {
+  Omit<PageToolDefinition<Schema>, 'schema'> & {
+    schema: Schema & Partial<typeof pageIdSchema>;
     pageScoped: true;
-    handler: (
+    handler(
       request: Request<Schema> & {page: ContextPage},
       response: Response,
       context: Context,
-    ) => Promise<void>;
+    ): Promise<void>;
   };
 
 export function definePageTool<Schema extends zod.ZodRawShape>(
-  definition: PageToolDefinition<Schema>,
-): DefinedPageTool<Schema>;
-
-export function definePageTool<
-  Schema extends zod.ZodRawShape,
-  Args extends ParsedArguments = ParsedArguments,
->(
-  definition: (args?: Args) => PageToolDefinition<Schema>,
-): (args?: Args) => DefinedPageTool<Schema>;
-
-export function definePageTool<
-  Schema extends zod.ZodRawShape,
-  Args extends ParsedArguments = ParsedArguments,
->(
-  definition:
-    PageToolDefinition<Schema> | ((args?: Args) => PageToolDefinition<Schema>),
-): DefinedPageTool<Schema> | ((args?: Args) => DefinedPageTool<Schema>) {
-  if (typeof definition === 'function') {
-    return (args?: Args): DefinedPageTool<Schema> => {
-      const tool = definition(args);
-      return {
-        ...tool,
-        pageScoped: true,
-      };
+  definition: (args: ParsedArguments) => PageToolDefinition<Schema>,
+): (args: ParsedArguments) => DefinedPageTool<Schema> {
+  return (args: ParsedArguments): DefinedPageTool<Schema> => {
+    const tool = definition(args);
+    return {
+      ...tool,
+      schema: {
+        ...(args.pageIdRouting && !isSlimTool(tool) ? pageIdSchema : {}),
+        ...tool.schema,
+      },
+      pageScoped: true,
     };
-  }
-
-  return {
-    ...definition,
-    pageScoped: true,
-  } as DefinedPageTool<Schema>;
+  };
 }
 
 export const CLOSE_PAGE_ERROR =
@@ -478,13 +479,13 @@ export const timeoutSchema = {
   timeout: zod
     .number()
     .int()
+    .transform(value => {
+      return value <= 0 ? undefined : value;
+    })
     .optional()
     .describe(
       `Maximum wait time in milliseconds. If set to 0, the default timeout will be used.`,
-    )
-    .transform(value => {
-      return value && value <= 0 ? undefined : value;
-    }),
+    ),
 };
 
 export function viewportTransform(arg: string | undefined):
@@ -553,4 +554,23 @@ export function geolocationTransform(arg: string | undefined) {
     latitude,
     longitude,
   };
+}
+
+export function isSlimTool(
+  tool: Pick<BaseToolDefinition, 'annotations'>,
+): boolean {
+  return Boolean(tool.annotations.conditions?.includes('slim'));
+}
+
+/**
+ * Slim mode replaces the regular tools with the slim tools. Only the tools of
+ * the current mode are registered, so a slim tool may share its name with a
+ * regular tool. `--slim` requires a restart, so the mode never changes while
+ * the server is running.
+ */
+export function isAvailableInMode(
+  tool: Pick<BaseToolDefinition, 'annotations'>,
+  serverArgs: Pick<ParsedArguments, 'slim'>,
+): boolean {
+  return isSlimTool(tool) === Boolean(serverArgs.slim);
 }

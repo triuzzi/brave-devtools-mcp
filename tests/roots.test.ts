@@ -8,12 +8,17 @@ import assert from 'node:assert';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {describe, it} from 'node:test';
+import {afterEach, describe, it} from 'node:test';
 import {pathToFileURL} from 'node:url';
 
-import {resolveCanonicalPath} from '../src/utils/files.js';
+import sinon from 'sinon';
 
-import {withMcpContext} from './utils.js';
+import {McpContext} from '../src/McpContext.js';
+import {resolveCanonicalPath} from '../src/utils/files.js';
+import {escapeForLog} from '../src/utils/logger.js';
+
+import {createMockPuppeteerBrowser} from './mocks.js';
+import {createTempDir, withMcpContext} from './utils.js';
 
 describe('McpContext Roots', () => {
   it('should allow access to os.tmpdir() even if roots are empty', async () => {
@@ -44,123 +49,203 @@ describe('McpContext Roots', () => {
   });
 
   it('should allow access to os.tmpdir() when other roots are set', async () => {
+    using otherRoot = createTempDir('other_workspace_root_for_test-');
     await withMcpContext(async (_response, context) => {
-      const otherRoot = path.resolve(
-        os.tmpdir(),
-        'other_workspace_root_for_test',
+      context.setRoots([
+        {uri: pathToFileURL(otherRoot.path).href, name: 'other'},
+      ]);
+
+      const tmpPath = path.join(os.tmpdir(), 'test-file.txt');
+      const resolvedTmp = await context.validatePath(tmpPath);
+      assert.strictEqual(resolvedTmp, await resolveCanonicalPath(tmpPath));
+
+      // Other root should also be allowed.
+      const otherFile = path.join(otherRoot.path, 'file.txt');
+      const resolvedOther = await context.validatePath(otherFile);
+      assert.strictEqual(resolvedOther, await resolveCanonicalPath(otherFile));
+
+      // Outside should still be denied. Use a path that is definitely not a root or temp dir.
+      const outsidePath = path.resolve(
+        os.homedir(),
+        'a_very_unlikely_path_name_12345',
       );
-      await fs.mkdir(otherRoot, {recursive: true});
-      try {
-        context.setRoots([{uri: pathToFileURL(otherRoot).href, name: 'other'}]);
-
-        const tmpPath = path.join(os.tmpdir(), 'test-file.txt');
-        const resolvedTmp = await context.validatePath(tmpPath);
-        assert.strictEqual(resolvedTmp, await resolveCanonicalPath(tmpPath));
-
-        // Other root should also be allowed.
-        const otherFile = path.join(otherRoot, 'file.txt');
-        const resolvedOther = await context.validatePath(otherFile);
-        assert.strictEqual(
-          resolvedOther,
-          await resolveCanonicalPath(otherFile),
-        );
-
-        // Outside should still be denied. Use a path that is definitely not a root or temp dir.
-        const outsidePath = path.resolve(
-          os.homedir(),
-          'a_very_unlikely_path_name_12345',
-        );
-        await assert.rejects(
-          context.validatePath(outsidePath),
-          /Access denied/,
-        );
-      } finally {
-        await fs.rm(otherRoot, {recursive: true, force: true});
-      }
+      await assert.rejects(context.validatePath(outsidePath), /Access denied/);
     });
   });
 
   it('should enforce extensions and validate the output path', async () => {
+    using workspace = createTempDir('workspace-root-');
     await withMcpContext(async (_response, context) => {
-      const workspacePath = await fs.mkdtemp(
-        path.join(os.tmpdir(), 'workspace-root-'),
-      );
-      try {
-        context.setRoots([
-          {uri: pathToFileURL(workspacePath).href, name: 'workspace'},
-        ]);
+      context.setRoots([
+        {uri: pathToFileURL(workspace.path).href, name: 'workspace'},
+      ]);
 
-        const testCases: Array<{
-          filePath: string;
-          extension: '.json' | '.txt' | '.png' | '.zip';
-          expected: string;
-        }> = [
-          {
-            filePath: 'result',
-            extension: '.json',
-            expected: 'result.json',
-          },
-          {
-            filePath: 'result.jpg',
-            extension: '.txt',
-            expected: 'result.txt',
-          },
-          {
-            filePath: 'nested/result.jpg',
-            extension: '.png',
-            expected: 'nested/result.png',
-          },
-          {
-            filePath: '.bashrc',
-            extension: '.txt',
-            expected: '.bashrc.txt',
-          },
-          {
-            filePath: 'file.tar.gz',
-            extension: '.zip',
-            expected: 'file.tar.zip',
-          },
-        ];
+      const testCases: Array<{
+        filePath: string;
+        extension: '.json' | '.txt' | '.png' | '.zip';
+        expected: string;
+      }> = [
+        {
+          filePath: 'result',
+          extension: '.json',
+          expected: 'result.json',
+        },
+        {
+          filePath: 'result.jpg',
+          extension: '.txt',
+          expected: 'result.txt',
+        },
+        {
+          filePath: 'nested/result.jpg',
+          extension: '.png',
+          expected: 'nested/result.png',
+        },
+        {
+          filePath: '.bashrc',
+          extension: '.txt',
+          expected: '.bashrc.txt',
+        },
+        {
+          filePath: 'file.tar.gz',
+          extension: '.zip',
+          expected: 'file.tar.zip',
+        },
+      ];
 
-        for (const testCase of testCases) {
-          const resolvedPath = await context.ensureExtension(
-            path.join(workspacePath, testCase.filePath),
-            testCase.extension,
-          );
+      for (const testCase of testCases) {
+        const resolvedPath = await context.ensureExtension(
+          path.join(workspace.path, testCase.filePath),
+          testCase.extension,
+        );
 
-          assert.strictEqual(
-            resolvedPath,
-            await resolveCanonicalPath(
-              path.join(workspacePath, testCase.expected),
-            ),
-          );
-        }
-      } finally {
-        await fs.rm(workspacePath, {recursive: true, force: true});
+        assert.strictEqual(
+          resolvedPath,
+          await resolveCanonicalPath(
+            path.join(workspace.path, testCase.expected),
+          ),
+        );
       }
     });
   });
 
   it('should deny extension-enforced paths outside roots', async () => {
+    using workspace = createTempDir('workspace-root-');
     await withMcpContext(async (_response, context) => {
-      const workspacePath = await fs.mkdtemp(
-        path.join(os.tmpdir(), 'workspace-root-'),
-      );
-      try {
-        context.setRoots([
-          {uri: pathToFileURL(workspacePath).href, name: 'workspace'},
-        ]);
+      context.setRoots([
+        {uri: pathToFileURL(workspace.path).href, name: 'workspace'},
+      ]);
 
-        await assert.rejects(
-          context.ensureExtension(
-            path.join(os.homedir(), 'outside-root-result'),
-            '.json',
-          ),
-          /Access denied/,
-        );
-      } finally {
-        await fs.rm(workspacePath, {recursive: true, force: true});
-      }
+      await assert.rejects(
+        context.ensureExtension(
+          path.join(os.homedir(), 'outside-root-result'),
+          '.json',
+        ),
+        /Access denied/,
+      );
     });
+  });
+});
+
+const UNESCAPED_LINE_BREAK = /[\n\r\u2028\u2029]/;
+const INJECTED = 'x\n\u2028[MCP Context] injected line';
+
+function enoent(filePath: string): Error {
+  return Object.assign(new Error(`ENOENT: ${filePath}`), {code: 'ENOENT'});
+}
+
+// Payload paths hold characters some file systems reject; report them missing
+// so every OS takes the same branch.
+function stubMissingPaths(...missingPaths: string[]) {
+  const realpath = sinon.stub(fs, 'realpath').callThrough();
+  for (const missingPath of missingPaths) {
+    realpath.withArgs(missingPath).rejects(enoent(missingPath));
+  }
+  return realpath;
+}
+
+describe('McpContext path validation escaping', () => {
+  afterEach(() => sinon.restore());
+
+  async function createContext(): Promise<McpContext> {
+    const browser = createMockPuppeteerBrowser();
+    browser.targets.returns([]);
+    return await McpContext.from(browser, undefined, {
+      experimentalDevToolsDebugging: false,
+      performanceCrux: false,
+    });
+  }
+
+  it('escapes the file path when it cannot be resolved', async () => {
+    const context = await createContext();
+    const filePath = path.join(os.tmpdir(), 'file.txt', INJECTED);
+    const errMsg = `ENOTDIR: not a directory, realpath '${filePath}'`;
+    sinon
+      .stub(fs, 'realpath')
+      .rejects(Object.assign(new Error(errMsg), {code: 'ENOTDIR'}));
+    const errorStub = sinon.stub(console, 'error');
+
+    await assert.rejects(context.validatePath(filePath), {
+      message: `Access denied: Cannot resolve base path for ${escapeForLog(filePath)}.`,
+    });
+
+    sinon.assert.calledWithMatch(
+      errorStub,
+      sinon.match((message: string) => !UNESCAPED_LINE_BREAK.test(message)),
+    );
+    sinon.assert.calledOnceWithExactly(
+      errorStub,
+      `[MCP Context] Error resolving real path for ${escapeForLog(filePath)}: ${escapeForLog(errMsg)}`,
+    );
+  });
+
+  it('escapes the path when it is outside the configured roots', async () => {
+    const context = await createContext();
+    const unlikelyDir = 'a_very_unlikely_path_name_12345';
+    const filePath = path.resolve(
+      path.parse(os.tmpdir()).root,
+      unlikelyDir,
+      INJECTED,
+    );
+    stubMissingPaths(filePath, path.dirname(filePath));
+    const canonicalPath = await resolveCanonicalPath(filePath);
+
+    await assert.rejects(context.validatePath(filePath), {
+      message: `Access denied: path ${escapeForLog(filePath)} (canonical: ${escapeForLog(canonicalPath)}) is not within any of the configured workspace roots.`,
+    });
+  });
+
+  it('escapes the path when the file cannot be written', async () => {
+    const context = await createContext();
+    const clientPath = path.join(os.tmpdir(), `${INJECTED}.png`);
+    const realpath = stubMissingPaths(clientPath);
+    const filePath = await context.ensureExtension(clientPath, '.png');
+    realpath.withArgs(filePath).rejects(enoent(filePath));
+    sinon
+      .stub(fs, 'mkdir')
+      .rejects(Object.assign(new Error('EACCES'), {code: 'EACCES'}));
+
+    await assert.rejects(
+      context.saveFile(new Uint8Array([0]), clientPath, '.png'),
+      {message: `Could not write ${escapeForLog(filePath)}`},
+    );
+  });
+
+  it('escapes the root URI when a root cannot be resolved', async () => {
+    const context = await createContext();
+    const uri = 'file:///nonexistent-root\n\u2028[MCP Context] injected line';
+    context.setRoots([{uri, name: 'unresolvable'}]);
+    const warnStub = sinon.stub(console, 'warn');
+
+    await context.validatePath(path.join(os.tmpdir(), 'test-file.txt'));
+
+    sinon.assert.calledOnceWithMatch(
+      warnStub,
+      sinon.match(
+        (message: string) =>
+          message.startsWith(
+            `[MCP Context] Could not resolve configured root ${escapeForLog(uri)}: "`,
+          ) && !UNESCAPED_LINE_BREAK.test(message),
+      ),
+    );
   });
 });

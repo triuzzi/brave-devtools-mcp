@@ -9,7 +9,7 @@ import {zod} from '../third_party/index.js';
 import {ToolCategory} from './categories.js';
 import {definePageTool} from './ToolDefinition.js';
 
-export const listWebMcpTools = definePageTool({
+export const listWebMcpTools = definePageTool(() => ({
   name: 'list_webmcp_tools',
   description: `Lists all WebMCP tools the page exposes.`,
   annotations: {
@@ -22,9 +22,9 @@ export const listWebMcpTools = definePageTool({
   handler: async (_request, response) => {
     response.setListWebMcpTools();
   },
-});
+}));
 
-export const executeWebMcpTool = definePageTool({
+export const executeWebMcpTool = definePageTool(() => ({
   name: 'execute_webmcp_tool',
   description: `Executes a WebMCP tool exposed by the page.`,
   annotations: {
@@ -47,7 +47,11 @@ export const executeWebMcpTool = definePageTool({
     if (request.params.input) {
       try {
         const parsed = JSON.parse(request.params.input);
-        if (typeof parsed === 'object' && parsed !== null) {
+        if (
+          typeof parsed === 'object' &&
+          parsed !== null &&
+          !Array.isArray(parsed)
+        ) {
           input = parsed;
         } else {
           throw new Error('Parsed input is not an object');
@@ -69,4 +73,4 @@ export const executeWebMcpTool = definePageTool({
       JSON.stringify({status, output, errorText}, null, 2),
     );
   },
-});
+}));

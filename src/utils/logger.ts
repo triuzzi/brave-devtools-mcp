@@ -39,6 +39,19 @@ export function flushLogs(
   });
 }
 
+/**
+ * Encodes a value for interpolation into a one-line log or error message. The
+ * result is a JSON string literal that also escapes DEL, C1 controls and
+ * U+2028/U+2029, which JSON.stringify leaves raw but terminals and line
+ * readers act on.
+ */
+export function escapeForLog(value: string): string {
+  return JSON.stringify(value).replace(
+    /[\u007f-\u009f\u2028\u2029]/g,
+    char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+}
+
 export const logger: Logger = (...args: unknown[]) => {
   if (logFileStream) {
     logFileStream.write(
@@ -50,6 +63,12 @@ export const logger: Logger = (...args: unknown[]) => {
 };
 
 export const puppeteerLogger = (prefix: string) => {
+  const dbg = util.debuglog(prefix);
+
+  if (!dbg.enabled) {
+    return;
+  }
+
   if (logFileStream) {
     return (...args: unknown[]) => {
       logFileStream!.write(
@@ -58,10 +77,7 @@ export const puppeteerLogger = (prefix: string) => {
     };
   }
 
-  const dbg = util.debuglog(prefix);
-  return dbg.enabled
-    ? (...args: unknown[]) => {
-        dbg('%s %s', new Date().toISOString(), util.format(...args));
-      }
-    : undefined;
+  return (...args: unknown[]) => {
+    dbg('%s %s', new Date().toISOString(), util.format(...args));
+  };
 };

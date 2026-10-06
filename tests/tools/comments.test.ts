@@ -8,6 +8,7 @@ import {afterEach, describe, it} from 'node:test';
 
 import sinon from 'sinon';
 
+import {DevToolsCommentBridge} from '../../src/devtools/DevToolsCommentBridge.js';
 import type {CommentThreadPayload} from '../../src/tools/comments.js';
 import {
   getDevtoolsComments,
@@ -34,11 +35,15 @@ describe('comments tools', () => {
 
   describe('get_devtools_comments', () => {
     it('reports error when DevTools window is not open', async t => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const lines = trackResponseLines(response);
       page.getDevToolsPage.resolves(undefined);
 
-      await getDevtoolsComments.handler({params: {}, page}, response, context);
+      await getDevtoolsComments(args).handler(
+        {params: {}, page},
+        response,
+        context,
+      );
 
       sinon.assert.calledOnce(page.getDevToolsPage);
       sinon.assert.calledOnceWithExactly(
@@ -50,53 +55,72 @@ describe('comments tools', () => {
     });
 
     it('fetches comments and sets them on response', async () => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const devtoolsPage = createMockPuppeteerPage();
+      const bridge = sinon.createStubInstance(DevToolsCommentBridge);
       page.getDevToolsPage.resolves(devtoolsPage);
+      page.ensureDevToolsCommentBridge.resolves(bridge);
 
       const mockThread: CommentThreadPayload = {
         id: 'comment-1',
         text: 'Fix the color contrast here',
-        backendNodeId: 42,
-        networkRequestId: 'req-99',
-        editor: {
-          filePath: 'src/style.css',
-          lineNumber: 10,
+        node: {
+          backendNodeId: 42,
+          targetId: 'target-1',
         },
+        networkRequestId: 'req-99',
       };
 
-      devtoolsPage.evaluate.resolves([mockThread]);
+      bridge.getComments.resolves([mockThread]);
 
-      await getDevtoolsComments.handler({params: {}, page}, response, context);
+      await getDevtoolsComments(args).handler(
+        {params: {}, page},
+        response,
+        context,
+      );
 
       sinon.assert.calledOnce(page.getDevToolsPage);
-      sinon.assert.calledOnce(devtoolsPage.evaluate);
+      sinon.assert.calledOnceWithExactly(
+        page.ensureDevToolsCommentBridge,
+        devtoolsPage,
+      );
+      sinon.assert.calledOnceWithExactly(bridge.getComments, devtoolsPage);
       sinon.assert.calledOnceWithExactly(response.setDevToolsComments, [
         mockThread,
       ]);
     });
 
     it('sets empty comments list when no comments are found', async () => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const devtoolsPage = createMockPuppeteerPage();
+      const bridge = sinon.createStubInstance(DevToolsCommentBridge);
       page.getDevToolsPage.resolves(devtoolsPage);
-      devtoolsPage.evaluate.resolves([]);
+      page.ensureDevToolsCommentBridge.resolves(bridge);
+      bridge.getComments.resolves([]);
 
-      await getDevtoolsComments.handler({params: {}, page}, response, context);
+      await getDevtoolsComments(args).handler(
+        {params: {}, page},
+        response,
+        context,
+      );
 
       sinon.assert.calledOnce(page.getDevToolsPage);
-      sinon.assert.calledOnce(devtoolsPage.evaluate);
+      sinon.assert.calledOnceWithExactly(
+        page.ensureDevToolsCommentBridge,
+        devtoolsPage,
+      );
+      sinon.assert.calledOnceWithExactly(bridge.getComments, devtoolsPage);
       sinon.assert.calledOnceWithExactly(response.setDevToolsComments, []);
     });
   });
 
   describe('resolve_devtools_comment', () => {
     it('reports error when DevTools window is not open', async t => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const lines = trackResponseLines(response);
       page.getDevToolsPage.resolves(undefined);
 
-      await resolveDevtoolsComment.handler(
+      await resolveDevtoolsComment(args).handler(
         {params: {threadId: 'comment-1'}, page},
         response,
         context,
@@ -107,13 +131,13 @@ describe('comments tools', () => {
     });
 
     it('resolves comment thread and appends reply text', async t => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const lines = trackResponseLines(response);
       const devtoolsPage = createMockPuppeteerPage();
       page.getDevToolsPage.resolves(devtoolsPage);
       devtoolsPage.evaluate.resolves(true);
 
-      await resolveDevtoolsComment.handler(
+      await resolveDevtoolsComment(args).handler(
         {
           params: {
             threadId: 'comment-1',
@@ -130,13 +154,13 @@ describe('comments tools', () => {
     });
 
     it('reports error when thread is not found', async t => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const lines = trackResponseLines(response);
       const devtoolsPage = createMockPuppeteerPage();
       page.getDevToolsPage.resolves(devtoolsPage);
       devtoolsPage.evaluate.resolves(false);
 
-      await resolveDevtoolsComment.handler(
+      await resolveDevtoolsComment(args).handler(
         {params: {threadId: 'comment-nonexistent'}, page},
         response,
         context,
@@ -149,11 +173,11 @@ describe('comments tools', () => {
 
   describe('reveal_in_devtools', () => {
     it('reports error when DevTools window is not open', async t => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const lines = trackResponseLines(response);
       page.getDevToolsPage.resolves(undefined);
 
-      await revealInDevtools.handler(
+      await revealInDevtools(args).handler(
         {params: {panelName: 'elements'}, page},
         response,
         context,
@@ -164,7 +188,7 @@ describe('comments tools', () => {
     });
 
     it('reveals element by snapshot uid', async t => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const lines = trackResponseLines(response);
       const devtoolsPage = createMockPuppeteerPage();
       page.getDevToolsPage.resolves(devtoolsPage);
@@ -174,7 +198,7 @@ describe('comments tools', () => {
       });
       devtoolsPage.evaluate.resolves(undefined);
 
-      await revealInDevtools.handler(
+      await revealInDevtools(args).handler(
         {
           params: {
             panelName: 'elements',
@@ -195,14 +219,14 @@ describe('comments tools', () => {
     });
 
     it('reveals network request by reqid', async t => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const lines = trackResponseLines(response);
       const devtoolsPage = createMockPuppeteerPage();
       page.getDevToolsPage.resolves(devtoolsPage);
       page.resolveReqidToCdpRequestId.returns('cdp-req-123');
       devtoolsPage.evaluate.resolves(undefined);
 
-      await revealInDevtools.handler(
+      await revealInDevtools(args).handler(
         {
           params: {
             panelName: 'network',
@@ -220,7 +244,7 @@ describe('comments tools', () => {
     });
 
     it('warns when snapshot uid or reqid cannot be resolved', async t => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const lines = trackResponseLines(response);
       const devtoolsPage = createMockPuppeteerPage();
       page.getDevToolsPage.resolves(devtoolsPage);
@@ -228,7 +252,7 @@ describe('comments tools', () => {
       page.resolveReqidToCdpRequestId.returns(undefined);
       devtoolsPage.evaluate.resolves(undefined);
 
-      await revealInDevtools.handler(
+      await revealInDevtools(args).handler(
         {
           params: {
             panelName: 'elements',
@@ -245,7 +269,7 @@ describe('comments tools', () => {
     });
 
     it('reveals element when panelName is omitted', async () => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const devtoolsPage = createMockPuppeteerPage();
       page.getDevToolsPage.resolves(devtoolsPage);
       page.resolveUidToBackendNodeId.resolves({
@@ -254,7 +278,7 @@ describe('comments tools', () => {
       });
       devtoolsPage.evaluate.resolves(undefined);
 
-      await revealInDevtools.handler(
+      await revealInDevtools(args).handler(
         {
           params: {
             uid: 'uid-header',
@@ -279,11 +303,11 @@ describe('comments tools', () => {
 
   describe('open_devtools', () => {
     it('opens DevTools window successfully', async () => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       const devtoolsPage = createMockPuppeteerPage();
       page.openDevTools.resolves(devtoolsPage);
 
-      await openDevtools.handler({params: {}, page}, response, context);
+      await openDevtools(args).handler({params: {}, page}, response, context);
 
       sinon.assert.calledOnce(page.openDevTools);
       sinon.assert.calledOnceWithExactly(
@@ -294,10 +318,10 @@ describe('comments tools', () => {
     });
 
     it('reports failure when openDevTools throws', async () => {
-      const {page, context, response} = createHandlerMocks();
+      const {page, context, response, args} = createHandlerMocks();
       page.openDevTools.rejects(new Error('Connection closed'));
 
-      await openDevtools.handler({params: {}, page}, response, context);
+      await openDevtools(args).handler({params: {}, page}, response, context);
 
       sinon.assert.calledOnce(page.openDevTools);
       sinon.assert.calledOnceWithExactly(

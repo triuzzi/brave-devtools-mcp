@@ -42,7 +42,7 @@ declare global {
   }
 }
 
-export const listThirdPartyDeveloperTools = definePageTool({
+export const listThirdPartyDeveloperTools = definePageTool(() => ({
   name: 'list_3p_developer_tools',
   description: `Lists all third-party developer tools the page exposes for providing runtime information.
 Third-party developer tools can be called via the 'execute_3p_developer_tool()' MCP tool.
@@ -61,9 +61,9 @@ third-party developer tools with additional functionality.`,
   handler: async (_request, response) => {
     response.setListThirdPartyDeveloperTools();
   },
-});
+}));
 
-export const executeThirdPartyDeveloperTool = definePageTool({
+export const executeThirdPartyDeveloperTool = definePageTool(() => ({
   name: 'execute_3p_developer_tool',
   description: `Executes a tool exposed by the page.`,
   annotations: {
@@ -85,7 +85,11 @@ export const executeThirdPartyDeveloperTool = definePageTool({
     if (request.params.params) {
       try {
         const parsed = JSON.parse(request.params.params);
-        if (typeof parsed === 'object' && parsed !== null) {
+        if (
+          typeof parsed === 'object' &&
+          parsed !== null &&
+          !Array.isArray(parsed)
+        ) {
           params = parsed;
         } else {
           throw new Error('Parsed params is not an object');
@@ -124,4 +128,4 @@ export const executeThirdPartyDeveloperTool = definePageTool({
       response,
     );
   },
-});
+}));

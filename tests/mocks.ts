@@ -25,24 +25,50 @@
 import type {Frame} from 'puppeteer-core';
 import sinon from 'sinon';
 
+import {
+  type ParsedArguments,
+  ConfigParser,
+} from '../src/config/ConfigParser.js';
 import {McpContext} from '../src/McpContext.js';
 import {McpPage} from '../src/McpPage.js';
 import {McpResponse} from '../src/McpResponse.js';
+import {McpWorker, type WorkerType} from '../src/McpWorker.js';
+import type {
+  AggregatedInfoWithId,
+  DuplicateStringGroup,
+  HeapSnapshotAggregateData,
+  HeapSnapshotClassDiff,
+  HeapSnapshotDetailedClassDiff,
+} from '../src/processors/HeapSnapshotManager.js';
+import {stableIdSymbol} from '../src/utils/id.js';
 import {
+  CdpBrowser,
   CdpExtension,
   CdpFrame,
   CdpPage,
   DevTools,
+  Dialog,
+  ElementHandle,
+  Locator,
+  Target,
+  TargetType,
+  WebWorker,
 } from '../src/third_party/index.js';
 import type {
+  Browser,
+  BrowserContext,
+  CDPSession,
   Extension,
   Page,
+  Protocol,
+  Realm,
   Result,
   RunnerResult,
 } from '../src/third_party/index.js';
 
 export type MockMcpPage = sinon.SinonStubbedInstance<McpPage> & {
   pptrPage: sinon.SinonStubbedInstance<Page>;
+  target: sinon.SinonStubbedInstance<MockTarget>;
 };
 export type MockMcpContext = sinon.SinonStubbedInstance<McpContext>;
 export type MockMcpResponse = sinon.SinonStubbedInstance<McpResponse>;
@@ -107,10 +133,58 @@ export function mockListener() {
   };
 }
 
+export function createMockPuppeteerBrowser(): sinon.SinonStubbedInstance<Browser> {
+  const browser = sinon.createStubInstance(
+    CdpBrowser,
+  ) as unknown as sinon.SinonStubbedInstance<Browser>;
+  sinon.stub(browser, 'connected').get(() => true);
+  browser.close.resolves();
+  browser.disconnect.resolves();
+  browser.pages.resolves([]);
+  browser.process.returns(null);
+
+  const browserListener = mockListener();
+  browser.on.callsFake((eventName, handler) => {
+    browserListener.on(eventName, handler);
+    return browser;
+  });
+  browser.off.callsFake((eventName, handler) => {
+    browserListener.off(eventName, handler);
+    return browser;
+  });
+  browser.once.callsFake((eventName, handler) => {
+    const onceHandler = (data: unknown) => {
+      browserListener.off(eventName, onceHandler);
+      handler(data);
+    };
+    browserListener.on(eventName, onceHandler);
+    return browser;
+  });
+  browser.emit.callsFake((eventName, data) => {
+    browserListener.emit(eventName, data);
+    return true;
+  });
+
+  return browser;
+}
+
 export function createMockPuppeteerPage(): sinon.SinonStubbedInstance<Page> {
   const page = sinon.createStubInstance(
     CdpPage,
   ) as unknown as sinon.SinonStubbedInstance<Page>;
+  const pageListener = mockListener();
+  page.on.callsFake((eventName, handler) => {
+    pageListener.on(eventName, handler);
+    return page;
+  });
+  page.off.callsFake((eventName, handler) => {
+    pageListener.off(eventName, handler);
+    return page;
+  });
+  page.emit.callsFake((eventName, data) => {
+    pageListener.emit(eventName, data);
+    return true;
+  });
 
   // mainFrame() must return a stable object so tests can pass it back into
   // page.emit('framenavigated', mainFrame) and have it recognized as the
@@ -152,12 +226,152 @@ export function createMockPuppeteerPage(): sinon.SinonStubbedInstance<Page> {
   return page;
 }
 
+export class MockTarget extends Target {
+  override asPage(): Promise<Page> {
+    throw new Error('Not implemented');
+  }
+  override url(): string {
+    return '';
+  }
+  override createCDPSession(): Promise<CDPSession> {
+    throw new Error('Not implemented');
+  }
+  override type(): TargetType {
+    return TargetType.PAGE;
+  }
+  override browser(): Browser {
+    throw new Error('Not implemented');
+  }
+  override browserContext(): BrowserContext {
+    throw new Error('Not implemented');
+  }
+  override opener(): Target | undefined {
+    return undefined;
+  }
+  _getTargetInfo(): Protocol.Target.TargetInfo {
+    throw new Error('Not implemented');
+  }
+}
+
+export function createMockPuppeteerTarget(
+  options: {
+    page?: sinon.SinonStubbedInstance<Page>;
+    url?: string;
+    title?: string;
+  } = {},
+): sinon.SinonStubbedInstance<MockTarget> {
+  const target = sinon.createStubInstance(MockTarget);
+  const page = options.page ?? createMockPuppeteerPage();
+  page.target.returns(target);
+  target.page.resolves(page);
+  target.asPage.resolves(page);
+  target.url.returns(options.url ?? 'https://example.com');
+  target._getTargetInfo.returns({
+    targetId: '<mock-target-id>',
+    type: 'page',
+    title: options.title ?? '',
+    url: options.url ?? 'https://example.com',
+    attached: true,
+    canAccessOpener: false,
+  });
+  return target;
+}
+
 export function createMockMcpPage(
-  options: {pptrPage?: sinon.SinonStubbedInstance<Page>} = {},
+  options: {
+    pptrPage?: sinon.SinonStubbedInstance<Page>;
+    target?: sinon.SinonStubbedInstance<MockTarget>;
+  } = {},
 ): MockMcpPage {
   const page = sinon.createStubInstance(McpPage);
+  page.emulationSettings = {};
   const pptrPage = options.pptrPage ?? createMockPuppeteerPage();
-  return Object.assign(page, {pptrPage});
+  const target = options.target ?? createMockPuppeteerTarget({page: pptrPage});
+  page.init.resolves();
+  page.close.callsFake(async () => {
+    await pptrPage.close({runBeforeUnload: false});
+  });
+  page.url.callsFake(() => pptrPage.url());
+  page.getTitle.returns('');
+  page.isClosed.callsFake(() => Boolean(pptrPage.isClosed()));
+  page.waitForEventsAfterAction.callsFake(async action => {
+    await action(new AbortController().signal);
+    return {};
+  });
+  Object.defineProperty(page, 'pptrPage', {
+    value: pptrPage,
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(page, 'target', {
+    value: target,
+    writable: true,
+    configurable: true,
+  });
+  return Object.assign(page, {pptrPage, target});
+}
+
+export function createMockDialog(
+  options: {type?: Protocol.Page.DialogType; message?: string} = {},
+): sinon.SinonStubbedInstance<Dialog> {
+  const dialog = sinon.createStubInstance(Dialog);
+  dialog.type.returns(options.type ?? 'alert');
+  dialog.message.returns(options.message ?? '');
+  return dialog;
+}
+
+export function createMockElementHandle(): {
+  handle: sinon.SinonStubbedInstance<ElementHandle<Element>>;
+  locator: sinon.SinonStubbedInstance<Locator<Element>>;
+} {
+  const handle =
+    sinon.createStubInstance<ElementHandle<Element>>(ElementHandle);
+  handle.dispose.resolves();
+  const locator = sinon.createStubInstance<Locator<Element>>(Locator);
+  locator.setTimeout.returns(locator);
+  handle.asLocator.returns(locator);
+  return {handle, locator};
+}
+
+export function createMockTarget(): sinon.SinonStubbedInstance<MockTarget> {
+  return createMockPuppeteerTarget();
+}
+
+// Concrete subclass of Puppeteer's abstract WebWorker so sinon.createStubInstance
+// can stub it without an `as unknown as` cast, mirroring MockTarget above.
+class MockWebWorker extends WebWorker {
+  mainRealm(): Realm {
+    throw new Error('Not implemented');
+  }
+  get client(): CDPSession {
+    throw new Error('Not implemented');
+  }
+}
+
+export function createMockWebWorker(): sinon.SinonStubbedInstance<MockWebWorker> {
+  return sinon.createStubInstance(MockWebWorker);
+}
+
+export function createMockMcpWorker(
+  options: {
+    id?: string;
+    type?: WorkerType;
+    url?: string;
+    worker?: WebWorker;
+  } = {},
+): McpWorker {
+  // A real McpWorker over a stubbed Target, so `url`/`worker()` resolve through
+  // the same code paths as in production rather than through stubbed getters.
+  const target = createMockTarget();
+  target.url.returns(
+    options.url ?? 'chrome-extension://mock-extension-id/sw.js',
+  );
+  target.worker.resolves(options.worker ?? null);
+  return new McpWorker(
+    options.id ?? 'sw-1',
+    options.type ?? 'service_worker',
+    target,
+  );
 }
 
 export function createMockMcpContext(
@@ -179,23 +393,29 @@ export function createMockMcpResponse(): MockMcpResponse {
  *
  *   const {page, context, response} = createHandlerMocks();
  */
-export function createHandlerMocks(): {
+export function createHandlerMocks(options: Partial<ParsedArguments> = {}): {
   page: MockMcpPage;
   context: MockMcpContext;
   response: MockMcpResponse;
+  args: ParsedArguments;
 } {
   const page = createMockMcpPage();
   const context = createMockMcpContext({selectedPage: page});
   const response = createMockMcpResponse();
-  return {page, context, response};
+  const args = createMockParsedArguments(options);
+  return {page, context, response, args};
 }
 
-export function createMockRunnerResult(): RunnerResult {
+export function createMockRunnerResult(
+  lhrOverrides: Partial<Result> = {},
+): RunnerResult {
   const lhr = {
+    finalDisplayedUrl: 'http://localhost',
     mainDocumentUrl: 'http://localhost',
     categories: {},
     audits: {},
     timing: {total: 0},
+    ...lhrOverrides,
   };
   return {
     lhr: lhr as unknown as Result,
@@ -679,4 +899,276 @@ export function createMockExtension(
   sinon.stub(extension, 'version').value(options.version ?? '1.0.0');
   sinon.stub(extension, 'enabled').value(options.enabled ?? true);
   return extension as unknown as Extension;
+}
+
+export function createMockHeapSnapshotStats(): DevTools.HeapSnapshotModel.HeapSnapshotModel.Statistics {
+  return {
+    total: 1000,
+    native: {total: 200, typedArrays: 50},
+    v8heap: {
+      total: 800,
+      code: 50,
+      jsArrays: 150,
+      strings: 200,
+      system: 400,
+    },
+  };
+}
+
+export function createMockHeapSnapshotStaticData(): DevTools.HeapSnapshotModel.HeapSnapshotModel.StaticData {
+  return new DevTools.HeapSnapshotModel.HeapSnapshotModel.StaticData(
+    10,
+    0,
+    1000,
+    100,
+  );
+}
+
+export function createMockNativeContextSizes(): DevTools.HeapSnapshotModel.HeapSnapshotModel.NativeContextSizes {
+  return {
+    nativeContexts: [],
+    sharedSize: 0,
+    noAttributionSize: 0,
+  };
+}
+
+export function createMockRetainedByContextSummary(): DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainedByContextSummary {
+  return {
+    contextCount: 0,
+    retainedByContextSize: 0,
+    retainedByContextCount: 0,
+    notRetainedByContextSize: 0,
+    notRetainedByContextCount: 0,
+    totalSize: 0,
+  };
+}
+
+export function createMockHeapSnapshotAggregateData(): HeapSnapshotAggregateData {
+  return {
+    aggregates: {},
+    objectCount: 0,
+    totalSelfSize: 0,
+  };
+}
+
+export function createMockItemsRange(): DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange {
+  return new DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange(
+    0,
+    0,
+    0,
+    [],
+  );
+}
+
+export function createMockRetainingPaths(): DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainingPaths {
+  return {
+    paths: [],
+    limitsReached: {
+      depth: false,
+      nodes: false,
+      siblings: false,
+    },
+  };
+}
+
+export function createMockDominatorChain(): DevTools.HeapSnapshotModel.HeapSnapshotModel.DominatorChain {
+  return [];
+}
+
+export function createMockClassDiffs(): HeapSnapshotClassDiff[] {
+  return [
+    {
+      className: 'TestClass',
+      addedCount: 1,
+      removedCount: 0,
+      countDelta: 1,
+      addedSize: 10,
+      removedSize: 0,
+      sizeDelta: 10,
+    },
+  ];
+}
+
+export function createMockDetailedClassDiff(): HeapSnapshotDetailedClassDiff {
+  return {
+    className: 'TestClass',
+    addedCount: 1,
+    removedCount: 0,
+    countDelta: 1,
+    addedSize: 10,
+    removedSize: 0,
+    sizeDelta: 10,
+    addedIds: [1],
+    addedSelfSizes: [10],
+    deletedIds: [],
+    deletedSelfSizes: [],
+  };
+}
+
+export function createMockDuplicateStrings(): DuplicateStringGroup[] {
+  return [];
+}
+
+export function createMockObjectInfo(): DevTools.HeapSnapshotModel.HeapSnapshotModel.ObjectInfo {
+  return {
+    id: 1,
+    nodeIndex: 0,
+    name: 'Object',
+    type: 'object',
+    selfSize: 100,
+    retainedSize: 200,
+    distance: 1,
+    edgeCount: 2,
+    retainerCount: 1,
+    detachedness:
+      DevTools.HeapSnapshotModel.HeapSnapshotModel.DOMLinkState.ATTACHED,
+  };
+}
+
+export function createMockContextAnalysisResult(): DevTools.HeapSnapshotModel.HeapSnapshotModel.ContextAnalysisResult {
+  return {
+    scopes: [
+      {
+        scopeInfoNodeIndex: 30,
+        scopeInfoNodeId: 303,
+        scriptNodeIndex: 7,
+        scriptNodeId: 301,
+        scriptName: 'test.js',
+        scopeName: 'createClosure',
+        scopeStart: 14,
+        scopeEnd: 104,
+        contextFieldCount: 2,
+        contexts: [
+          {
+            contextNodeIndex: 10,
+            contextNodeId: 101,
+            retainedSize: 5000,
+            deadFieldsRetainedSizeSum: 2000,
+            deadFields: [
+              {
+                name: 'dead',
+                valueNodeIndex: 50,
+                valueNodeId: 202,
+                valueName: 'Object',
+                valueType: 'object',
+                selfSize: 200,
+                retainedSize: 2000,
+              },
+            ],
+          },
+          {
+            contextNodeIndex: 11,
+            contextNodeId: 102,
+            retainedSize: 1000,
+            deadFieldsRetainedSizeSum: 500,
+            deadFields: [
+              {
+                name: 'alsoDead',
+                valueNodeIndex: 60,
+                valueNodeId: 204,
+                valueName: 'Array',
+                valueType: 'object',
+                selfSize: 100,
+                retainedSize: 500,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        scopeInfoNodeIndex: 40,
+        scopeInfoNodeId: 313,
+        scriptNodeIndex: 8,
+        scriptNodeId: 311,
+        scriptName: 'other-scope.js',
+        scopeName: 'createOtherClosure',
+        scopeStart: 20,
+        scopeEnd: 60,
+        contextFieldCount: 1,
+        contexts: [
+          {
+            contextNodeIndex: 12,
+            contextNodeId: 111,
+            retainedSize: 3000,
+            deadFieldsRetainedSizeSum: 1500,
+            deadFields: [
+              {
+                name: 'captured',
+                valueNodeIndex: 70,
+                valueNodeId: 206,
+                valueName: 'Map',
+                valueType: 'object',
+                selfSize: 150,
+                retainedSize: 1500,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    scriptsWithoutScopes: [
+      {
+        scriptNodeIndex: 9,
+        scriptNodeId: 401,
+        scriptName: 'other.js',
+        contextCount: 2,
+      },
+    ],
+  };
+}
+
+export function createMockParsedArguments(
+  options: Partial<ParsedArguments> = {},
+): ParsedArguments {
+  const defaultArgs = new ConfigParser(
+    '0.0.0',
+    ['node', 'main.js'],
+    process.env,
+    false,
+  ).parse();
+  return {...defaultArgs, ...options};
+}
+
+export function createMockHeapSnapshotNode(
+  options: Partial<DevTools.HeapSnapshotModel.HeapSnapshotModel.Node> = {},
+): DevTools.HeapSnapshotModel.HeapSnapshotModel.Node {
+  return {
+    id: options.id ?? 1,
+    name: options.name ?? 'Node',
+    distance: options.distance ?? 1,
+    nodeIndex: options.nodeIndex ?? 0,
+    retainedSize: options.retainedSize ?? 100,
+    selfSize: options.selfSize ?? 10,
+    type: options.type ?? 'object',
+    canBeQueried: options.canBeQueried ?? false,
+    detachedDOMTreeNode: options.detachedDOMTreeNode ?? false,
+    ignored: options.ignored ?? false,
+    isAddedNotRemoved: options.isAddedNotRemoved ?? null,
+  };
+}
+
+export function createMockHeapSnapshotEdge(
+  options: Partial<DevTools.HeapSnapshotModel.HeapSnapshotModel.Edge> = {},
+): DevTools.HeapSnapshotModel.HeapSnapshotModel.Edge {
+  return {
+    name: options.name ?? 'edge',
+    type: options.type ?? 'property',
+    edgeIndex: options.edgeIndex ?? 0,
+    isAddedNotRemoved: options.isAddedNotRemoved ?? null,
+    node: options.node ?? createMockHeapSnapshotNode(),
+  };
+}
+
+export function createMockAggregatedInfo(
+  options: Partial<AggregatedInfoWithId> = {},
+): AggregatedInfoWithId {
+  return {
+    count: options.count ?? 1,
+    distance: options.distance ?? 1,
+    self: options.self ?? 10,
+    maxRet: options.maxRet ?? 100,
+    name: options.name ?? 'Object',
+    idxs: options.idxs ?? [],
+    [stableIdSymbol]: options[stableIdSymbol] ?? 1,
+  };
 }

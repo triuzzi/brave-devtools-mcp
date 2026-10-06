@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {ParsedArguments} from './config/mcp-options.js';
+import {PROTOCOL_TIMEOUT_MILLISECONDS} from './BrowserManager.js';
+import type {ParsedArguments} from './config/ConfigParser.js';
 import type {McpContext} from './McpContext.js';
 import type {McpPage} from './McpPage.js';
-import type {DataFormat} from './McpResponse.js';
 import {McpResponse} from './McpResponse.js';
 import {SlimMcpResponse} from './SlimMcpResponse.js';
 import {ClearcutLogger} from './telemetry/ClearcutLogger.js';
-import type {CallToolResult} from './third_party/index.js';
+import type {Browser, CallToolResult} from './third_party/index.js';
 import {zod} from './third_party/index.js';
 import {labels} from './tools/categories.js';
 import {categoryToFlagName} from './config/category-options.js';
@@ -21,11 +21,34 @@ import type {
   FileVerificationOption,
   ToolDefinition,
 } from './tools/ToolDefinition.js';
-import {pageIdSchema} from './tools/ToolDefinition.js';
+import {isAvailableInMode, isSlimTool} from './tools/ToolDefinition.js';
 import {logger} from './utils/logger.js';
 import type {Mutex} from './third_party/index.js';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {isLocalhost} from './utils/url.js';
+
+/**
+ * Upper bound on how long a single tool call may wait on the browser
+ * connection. Puppeteer normally rejects in-flight CDP calls when the
+ * underlying transport closes, but a transport that dies silently (e.g. an
+ * adb port-forward torn down mid-call, rather than closed cleanly) never
+ * fires `close`/`error`/`disconnected`, so the call would otherwise hang
+ * until an external (client-side) timeout gives up on the whole server. This
+ * bound turns that into a fast, clear error instead, and forgets the cached
+ * browser handle so the next call reconnects rather than reusing a handle
+ * that still looks connected.
+ *
+ * Never shorter than the CDP protocol timeout: heavy pages keep CDP calls
+ * busy for minutes (see PROTOCOL_TIMEOUT_MILLISECONDS), and timing out here
+ * also closes a launched browser, so BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS bounds
+ * both.
+ */
+export const TOOL_CALL_TIMEOUT_MS = Math.max(
+  60_000,
+  PROTOCOL_TIMEOUT_MILLISECONDS,
+);
+
+class ToolCallTimeoutError extends Error {}
 
 function buildDisabledMessage(
   toolName: string,
@@ -42,7 +65,17 @@ function buildDisabledMessage(
 function getToolStatusInfo(
   tool: ToolDefinition | DefinedPageTool,
   serverArgs: ParsedArguments,
-): {disabled: boolean; reason?: string} {
+): {disabled: boolean; reason?: string; unavailableInMode?: boolean} {
+  if (!isAvailableInMode(tool, serverArgs)) {
+    return {
+      disabled: true,
+      unavailableInMode: true,
+      reason: isSlimTool(tool)
+        ? `Tool ${tool.name} is only available with --slim.`
+        : `Tool ${tool.name} is not available with --slim.`,
+    };
+  }
+
   const category = tool.annotations.category;
   if (category) {
     const flag = categoryToFlagName(category);
@@ -72,30 +105,13 @@ function isPageScopedTool(
   return 'pageScoped' in tool && tool.pageScoped === true;
 }
 
-function formatArgumentNames(names: string[]): string {
-  return names.map(name => `"${name}"`).join(', ');
-}
-
-function buildUnknownArgumentsMessage(
-  toolName: string,
-  unknownArgumentNames: string[],
-  expectedArgumentNames: string[],
-): string {
-  const unknownLabel =
-    unknownArgumentNames.length === 1 ? 'argument' : 'arguments';
-  const expectedArguments = expectedArgumentNames.length
-    ? `Expected arguments: ${formatArgumentNames(expectedArgumentNames)}.`
-    : 'This tool does not accept any arguments.';
-  const correction =
-    unknownArgumentNames.length === 1 ? 'Remove it' : 'Remove them';
-
-  return `Unknown ${unknownLabel} for tool "${toolName}": ${formatArgumentNames(unknownArgumentNames)}. ${expectedArguments} ${correction} and retry.`;
-}
-
 async function validateAndResolvePathOrUrl(
   filePathOrUrl: string,
   context: McpContext,
-): Promise<string> {
+): Promise<string | undefined> {
+  if (filePathOrUrl.trim().length === 0) {
+    return undefined;
+  }
   try {
     const url = new URL(filePathOrUrl);
     if (url.protocol === 'file:') {
@@ -151,7 +167,10 @@ async function validateToolFiles(
         const updated: unknown[] = [];
         for (const item of val) {
           if (typeof item === 'string') {
-            updated.push(await validateAndResolvePathOrUrl(item, context));
+            const resolved = await validateAndResolvePathOrUrl(item, context);
+            if (resolved !== undefined) {
+              updated.push(resolved);
+            }
           } else {
             throw new Error(
               'Unexpected non-string value as a file path or URL',
@@ -166,8 +185,11 @@ async function validateToolFiles(
 
 export class ToolHandler {
   readonly inputSchema: zod.ZodRawShape;
-  readonly registeredInputSchema: zod.ZodTypeAny;
-  readonly shouldRegister: boolean;
+  readonly registeredInputSchema: zod.ZodObject<
+    zod.ZodRawShape,
+    zod.core.$strict
+  >;
+  readonly disabled: boolean;
   private readonly disabledReason?: string;
 
   constructor(
@@ -175,28 +197,54 @@ export class ToolHandler {
     private readonly serverArgs: ParsedArguments,
     private readonly getContext: () => Promise<McpContext>,
     private readonly toolMutex: Mutex,
+    private readonly forgetBrowserOnTimeout: (browser: Browser) => void,
+    private readonly abandonPendingBrowserAttemptOnTimeout: () => void,
   ) {
-    const {disabled, reason} = getToolStatusInfo(tool, serverArgs);
-    this.disabledReason = reason;
-    this.shouldRegister = !(disabled && !serverArgs.viaCli);
-
-    this.inputSchema =
-      'pageScoped' in tool &&
-      tool.pageScoped &&
-      serverArgs.pageIdRouting &&
-      !serverArgs.slim
-        ? {...pageIdSchema, ...tool.schema}
-        : tool.schema;
-    this.registeredInputSchema = zod.object(this.inputSchema).passthrough();
-  }
-
-  unknownArgumentNames(params: Record<string, unknown>): string[] {
-    return Object.keys(params).filter(
-      key => !Object.hasOwn(this.inputSchema, key),
+    const {disabled, reason, unavailableInMode} = getToolStatusInfo(
+      tool,
+      serverArgs,
     );
+    this.disabledReason = reason;
+    this.disabled =
+      disabled && (Boolean(unavailableInMode) || !serverArgs.viaCli);
+
+    this.inputSchema = tool.schema;
+    this.registeredInputSchema = zod.object(this.inputSchema).strict();
   }
 
-  async handle(params: Record<string, unknown>): Promise<CallToolResult> {
+  /**
+   * Races a promise against TOOL_CALL_TIMEOUT_MS, calling onTimeout() if the
+   * timer wins. The loser of the race is left running — there is no way to
+   * cancel a pending Puppeteer call — but since nothing is left awaiting it,
+   * it cannot block subsequent tool calls.
+   */
+  async #raceWithTimeout<T>(
+    promise: Promise<T>,
+    onTimeout: () => void,
+  ): Promise<T> {
+    const timeoutError = new ToolCallTimeoutError(
+      `Tool "${this.tool.name}" timed out after ${TOOL_CALL_TIMEOUT_MS}ms waiting on the browser connection. The connection may have been lost (for example, the debugged browser or app restarted). It will be re-established automatically on the next tool call.`,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(timeoutError), TOOL_CALL_TIMEOUT_MS);
+      timer.unref?.();
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } catch (err) {
+      if (err === timeoutError) {
+        onTimeout();
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  handle = async (params: Record<string, unknown>): Promise<CallToolResult> => {
+    using _guard = await this.toolMutex.acquire();
+
     if (this.disabledReason) {
       return {
         content: [
@@ -209,24 +257,6 @@ export class ToolHandler {
       };
     }
 
-    const unknownArgumentNames = this.unknownArgumentNames(params);
-    if (unknownArgumentNames.length) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: buildUnknownArgumentsMessage(
-              this.tool.name,
-              unknownArgumentNames,
-              Object.keys(this.inputSchema),
-            ),
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    const guard = await this.toolMutex.acquire();
     const startTime = Date.now();
     let success = false;
     let devToolsData: DevToolsData | undefined;
@@ -235,7 +265,15 @@ export class ToolHandler {
       logger?.(
         `${this.tool.name} request: ${JSON.stringify(params, null, '  ')}`,
       );
-      const context = await this.getContext();
+      // ensureBrowser() has no cancellation mechanism, so this timeout only
+      // stops us from waiting — the attempt itself keeps running abandoned.
+      // abandonPendingBrowserAttemptOnTimeout() tells BrowserManager to
+      // discard that attempt if it succeeds later instead of handing it to a
+      // subsequent caller — see BrowserManager#abandonPendingAttempt()'s doc
+      // comment for the full mechanism.
+      const context = await this.#raceWithTimeout(this.getContext(), () =>
+        this.abandonPendingBrowserAttemptOnTimeout(),
+      );
       logger?.(`${this.tool.name} context: resolved`);
       const response = this.serverArgs.slim
         ? new SlimMcpResponse(this.serverArgs)
@@ -245,55 +283,61 @@ export class ToolHandler {
       if (context.consumeReconnectNotice()) {
         response.setReconnectNotice();
       }
-      let page: McpPage | undefined;
-      try {
-        await validateToolFiles(this.tool, params, context);
-        if (isPageScopedTool(this.tool)) {
-          const pageId =
-            typeof params.pageId === 'number' ? params.pageId : undefined;
-          page =
-            this.serverArgs.pageIdRouting &&
-            pageId !== undefined &&
-            !this.serverArgs.slim
-              ? context.getPageById(pageId)
-              : context.getSelectedMcpPage();
-          response.setPage(page);
-          if (this.tool.blockedByDialog) {
-            page.throwIfDialogOpen();
+      // Shares one budget with tool.handler(): several tools' actual CDP
+      // calls happen in response.handle() instead (take_snapshot,
+      // list_pages, get_network_request, list_extensions), so it needs
+      // covering too. The closure below isn't cancelled on timeout — it
+      // keeps running abandoned — but nothing after this point observes its
+      // result.
+      const {content, structuredContent} = await this.#raceWithTimeout(
+        (async () => {
+          let page: McpPage | undefined;
+          try {
+            await validateToolFiles(this.tool, params, context);
+            if (isPageScopedTool(this.tool)) {
+              const pageId =
+                typeof params.pageId === 'number' ? params.pageId : undefined;
+              page =
+                this.serverArgs.pageIdRouting &&
+                pageId !== undefined &&
+                !isSlimTool(this.tool)
+                  ? context.getPageById(pageId)
+                  : context.getSelectedMcpPage();
+              await page?.init();
+              response.setPage(page);
+              if (this.tool.blockedByDialog) {
+                page.throwIfDialogOpen();
+              }
+              await this.tool.handler(
+                {
+                  params,
+                  page,
+                },
+                response,
+                context,
+              );
+            } else {
+              await this.tool.handler(
+                {
+                  params,
+                },
+                response,
+                context,
+              );
+            }
+          } catch (err) {
+            response.setError(err);
           }
-          await this.tool.handler(
-            {
-              params,
-              page,
-            },
-            response,
-            context,
-          );
-        } else {
-          await this.tool.handler(
-            {
-              params,
-            },
-            response,
-            context,
-          );
-        }
-      } catch (err) {
-        response.setError(err);
-      }
-      devToolsData = await context.getDevToolsData(page);
-      pageUrl = context.getSelectedMcpPageUrl(page);
-      // Resolve data format: --experimentalDataFormat takes precedence, fall back to legacy --experimentalToonFormat
-      let dataFormat: DataFormat = 'default';
-      if (this.serverArgs.experimentalDataFormat) {
-        dataFormat = this.serverArgs.experimentalDataFormat as DataFormat;
-      } else if (this.serverArgs.experimentalToonFormat) {
-        dataFormat = 'toon';
-      }
-
-      const {content, structuredContent} = await response.handle(
-        context,
-        dataFormat,
+          devToolsData = await context.getDevToolsData(page);
+          pageUrl = context.getSelectedMcpPageUrl(page);
+          // --experimentalDataFormat takes precedence over the legacy
+          // --experimentalToonFormat.
+          const dataFormat =
+            this.serverArgs.experimentalDataFormat ??
+            (this.serverArgs.experimentalToonFormat ? 'toon' : 'default');
+          return await response.handle(context, dataFormat);
+        })(),
+        () => this.forgetBrowserOnTimeout(context.browser),
       );
       const result: CallToolResult & {
         structuredContent?: Record<string, unknown>;
@@ -333,7 +377,6 @@ export class ToolHandler {
         devToolsData,
         pageUrl,
       });
-      guard[Symbol.dispose]();
     }
-  }
+  };
 }

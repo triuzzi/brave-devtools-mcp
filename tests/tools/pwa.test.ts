@@ -15,6 +15,7 @@ import {
   launchPwa,
   getOsAppState,
 } from '../../src/tools/pwa.js';
+import {createHandlerMocks, createMockPuppeteerPage} from '../mocks.js';
 import {serverHooks} from '../server.js';
 import {getTextContent, withMcpContext} from '../utils.js';
 
@@ -88,8 +89,8 @@ describe('pwa', () => {
   it('installs a PWA, reads its OS state, and uninstalls it', async () => {
     const {manifestId, startUrl} = setupPwaRoutes();
     await withMcpContext(
-      async (response, context) => {
-        await installPwa.handler(
+      async (response, context, args) => {
+        await installPwa(args).handler(
           {params: {manifestId, installUrlOrBundleUrl: startUrl}},
           response,
           context,
@@ -100,7 +101,11 @@ describe('pwa', () => {
         );
 
         response.resetResponseLineForTesting();
-        await getOsAppState.handler({params: {manifestId}}, response, context);
+        await getOsAppState(args).handler(
+          {params: {manifestId}},
+          response,
+          context,
+        );
         const stateOutput = response.responseLines.join('\n');
         assert.ok(
           stateOutput.includes('Badge count: 0'),
@@ -112,7 +117,11 @@ describe('pwa', () => {
         );
 
         const includePages = sinon.spy(response, 'setIncludePages');
-        await uninstallPwa.handler({params: {manifestId}}, response, context);
+        await uninstallPwa(args).handler(
+          {params: {manifestId}},
+          response,
+          context,
+        );
         assert.ok(
           includePages.calledOnce,
           'uninstall should refresh the page list after closing app windows',
@@ -120,7 +129,11 @@ describe('pwa', () => {
 
         // Querying OS state after uninstall should reject.
         await assert.rejects(
-          getOsAppState.handler({params: {manifestId}}, response, context),
+          getOsAppState(args).handler(
+            {params: {manifestId}},
+            response,
+            context,
+          ),
         );
       },
       PWA_BROWSER_OPTIONS,
@@ -129,44 +142,51 @@ describe('pwa', () => {
   });
 
   it('does not require a selected page for browser-scoped operations', async () => {
-    const {manifestId, startUrl} = setupPwaRoutes();
-    await withMcpContext(
-      async (response, context) => {
-        const page = context.getSelectedMcpPage().pptrPage;
-        sinon
-          .stub(context, 'getSelectedMcpPage')
-          .throws(new Error('No page selected'));
-        const install = sinon.stub(context, 'installPWA').resolves(manifestId);
-        const launch = sinon.stub(context, 'launchPWA').resolves(page);
-        const getState = sinon
-          .stub(context, 'getPWAState')
-          .resolves({badgeCount: 0, fileHandlers: []});
-        const uninstall = sinon.stub(context, 'uninstallPWA').resolves();
+    const manifestId = 'https://example.com/pwa/';
+    const startUrl = 'https://example.com/pwa/index.html';
+    const {context, response, args} = createHandlerMocks();
+    const pptrPage = createMockPuppeteerPage();
+    pptrPage.url.returns(startUrl);
+    context.getSelectedMcpPage.throws(new Error('No page selected'));
+    context.installPWA.resolves(manifestId);
+    context.launchPWA.resolves(pptrPage);
+    context.getPWAState.resolves({badgeCount: 0, fileHandlers: []});
+    context.uninstallPWA.resolves();
 
-        await installPwa.handler(
-          {params: {manifestId, installUrlOrBundleUrl: startUrl}},
-          response,
-          context,
-        );
-        await launchPwa.handler({params: {manifestId}}, response, context);
-        await getOsAppState.handler({params: {manifestId}}, response, context);
-        await uninstallPwa.handler({params: {manifestId}}, response, context);
-
-        assert.ok(install.calledOnce);
-        assert.ok(launch.calledOnce);
-        assert.ok(getState.calledOnce);
-        assert.ok(uninstall.calledOnce);
-      },
-      PWA_BROWSER_OPTIONS,
-      {categoryPwa: true},
+    await installPwa(args).handler(
+      {params: {manifestId, installUrlOrBundleUrl: startUrl}},
+      response,
+      context,
     );
+    await launchPwa(args).handler({params: {manifestId}}, response, context);
+    await getOsAppState(args).handler(
+      {params: {manifestId}},
+      response,
+      context,
+    );
+    await uninstallPwa(args).handler({params: {manifestId}}, response, context);
+
+    sinon.assert.notCalled(context.getSelectedMcpPage);
+    sinon.assert.calledOnceWithExactly(context.installPWA, {
+      manifestId,
+      installUrlOrBundleUrl: startUrl,
+      displayMode: undefined,
+    });
+    sinon.assert.calledOnceWithExactly(context.launchPWA, {
+      manifestId,
+      url: undefined,
+    });
+    sinon.assert.calledOnceWithExactly(context.getPWAState, {manifestId});
+    sinon.assert.calledOnceWithExactly(context.uninstallPWA, {manifestId});
+    sinon.assert.calledTwice(response.setIncludePages);
+    sinon.assert.alwaysCalledWithExactly(response.setIncludePages, true);
   });
 
   it('launches an installed PWA in a standalone window', async () => {
     const {manifestId, startUrl} = setupPwaRoutes();
     await withMcpContext(
-      async (response, context) => {
-        await installPwa.handler(
+      async (response, context, args) => {
+        await installPwa(args).handler(
           {
             params: {
               manifestId,
@@ -179,7 +199,11 @@ describe('pwa', () => {
         );
 
         response.resetResponseLineForTesting();
-        await launchPwa.handler({params: {manifestId}}, response, context);
+        await launchPwa(args).handler(
+          {params: {manifestId}},
+          response,
+          context,
+        );
         assert.ok(
           response.responseLines.some(l => l.includes(startUrl)),
           `launch response should reference the app url, got: ${response.responseLines.join('\n')}`,
@@ -202,7 +226,11 @@ describe('pwa', () => {
           'the launched app should be in standalone display mode',
         );
 
-        await uninstallPwa.handler({params: {manifestId}}, response, context);
+        await uninstallPwa(args).handler(
+          {params: {manifestId}},
+          response,
+          context,
+        );
       },
       PWA_BROWSER_OPTIONS,
       {categoryPwa: true},
@@ -212,8 +240,8 @@ describe('pwa', () => {
   it('launches an installed PWA at an explicit URL', async () => {
     const {manifestId, startUrl, explicitUrl} = setupPwaRoutes();
     await withMcpContext(
-      async (response, context) => {
-        await installPwa.handler(
+      async (response, context, args) => {
+        await installPwa(args).handler(
           {
             params: {
               manifestId,
@@ -226,7 +254,7 @@ describe('pwa', () => {
         );
 
         response.resetResponseLineForTesting();
-        await launchPwa.handler(
+        await launchPwa(args).handler(
           {params: {manifestId, url: explicitUrl}},
           response,
           context,
@@ -243,7 +271,11 @@ describe('pwa', () => {
         });
         assert.ok(appTarget, 'the explicit launch target should exist');
 
-        await uninstallPwa.handler({params: {manifestId}}, response, context);
+        await uninstallPwa(args).handler(
+          {params: {manifestId}},
+          response,
+          context,
+        );
       },
       PWA_BROWSER_OPTIONS,
       {categoryPwa: true},
@@ -253,9 +285,9 @@ describe('pwa', () => {
   it('selects a surviving page after uninstall closes the selected app', async () => {
     const {manifestId, startUrl} = setupPwaRoutes();
     await withMcpContext(
-      async (response, context) => {
+      async (response, context, args) => {
         const originalPage = context.getSelectedMcpPage();
-        await installPwa.handler(
+        await installPwa(args).handler(
           {
             params: {
               manifestId,
@@ -266,16 +298,25 @@ describe('pwa', () => {
           response,
           context,
         );
-        await launchPwa.handler({params: {manifestId}}, response, context);
+        await launchPwa(args).handler(
+          {params: {manifestId}},
+          response,
+          context,
+        );
         await context.createPagesSnapshot();
         const appPage = context.getPages().find(page => {
-          return page.pptrPage.url() === startUrl;
+          return page.url() === startUrl;
         });
         assert.ok(appPage, 'the launched app page should be listed');
+        await appPage.init();
         context.selectPage(appPage);
 
         response.resetResponseLineForTesting();
-        await uninstallPwa.handler({params: {manifestId}}, response, context);
+        await uninstallPwa(args).handler(
+          {params: {manifestId}},
+          response,
+          context,
+        );
         const result = await response.handle(context);
 
         assert.strictEqual(context.getSelectedMcpPage(), originalPage);

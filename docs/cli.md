@@ -111,10 +111,10 @@ If the CLI hangs or fails to connect, try stopping the background process:
 brave-devtools stop
 ```
 
-For more verbose logs, set the `DEBUG` environment variable:
+For more verbose logs, set the `NODE_DEBUG` environment variable:
 
 ```sh
-DEBUG=* brave-devtools list_pages
+NODE_DEBUG=* brave-devtools list_pages
 ```
 
 ## CLI generation

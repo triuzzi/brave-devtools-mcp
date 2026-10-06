@@ -6,7 +6,7 @@
 
 import type {WebMCPTool} from 'puppeteer-core';
 
-import type {ParsedArguments} from './config/mcp-options.js';
+import type {ParsedArguments} from './config/ConfigParser.js';
 import {
   CommentFormatter,
   type StructuredCommentThread,
@@ -19,6 +19,9 @@ import {
   resolveContainerQueries,
 } from './formatters/CssFormatter.js';
 import {
+  collectRankedContexts,
+  type ContextAnalysisReport,
+  type ContextFilterOptions,
   HeapSnapshotFormatter,
   isEdgeLike,
   isNodeLike,
@@ -40,7 +43,6 @@ import {DevTools, getToonEncode, getGcfEncode} from './third_party/index.js';
 import type {
   ConsoleMessage,
   ImageContent,
-  Page,
   ResourceType,
   TextContent,
   Extension,
@@ -78,6 +80,9 @@ interface TraceInsightData {
   insightName: InsightName;
 }
 
+interface ContextAnalysisOptions
+  extends PaginationOptions, ContextFilterOptions {}
+
 export class McpResponse implements Response {
   #includePages = false;
   #includeExtensionServiceWorkers = false;
@@ -109,6 +114,8 @@ export class McpResponse implements Response {
     detailedClassDiff?: HeapSnapshotDetailedClassDiff;
     duplicateStrings?: DuplicateStringGroup[];
     objectInfo?: DevTools.HeapSnapshotModel.HeapSnapshotModel.ObjectInfo;
+    contextAnalysis?: DevTools.HeapSnapshotModel.HeapSnapshotModel.ContextAnalysisResult;
+    contextAnalysisOptions?: ContextAnalysisOptions;
   };
   #networkRequestsOptions?: {
     include: boolean;
@@ -181,6 +188,10 @@ export class McpResponse implements Response {
       this.#includeExtensionServiceWorkers = value;
       this.#includeExtensionPages = value;
     }
+  }
+
+  setIncludeExtensionServiceWorkers(value: boolean): void {
+    this.#includeExtensionServiceWorkers = value;
   }
 
   includeSnapshot(params?: SnapshotParams): void {
@@ -461,6 +472,18 @@ export class McpResponse implements Response {
     };
   }
 
+  setHeapSnapshotContextAnalysis(
+    contextAnalysis: DevTools.HeapSnapshotModel.HeapSnapshotModel.ContextAnalysisResult,
+    options?: ContextAnalysisOptions,
+  ) {
+    this.#heapSnapshotOptions = {
+      ...this.#heapSnapshotOptions,
+      include: true,
+      contextAnalysis,
+      contextAnalysisOptions: options,
+    };
+  }
+
   attachImage(value: ImageContentData): void {
     this.#images.push(value);
   }
@@ -702,13 +725,20 @@ export class McpResponse implements Response {
     );
   }
 
-  async #handleComments(): Promise<CommentFormatter | undefined> {
+  async #handleComments(): Promise<
+    | {
+        formatter: CommentFormatter;
+        commentsSnapshotRegenerated?: 'standard' | 'verbose';
+      }
+    | undefined
+  > {
     const comments = this.#devToolsComments;
     if (!comments) {
       return undefined;
     }
     const page = this.#page;
-    return await CommentFormatter.from(comments, {
+    const initialSnapshot = page?.textSnapshot;
+    const formatter = await CommentFormatter.from(comments, {
       resolveBackendNodeId: page
         ? (id: number) => page.resolveBackendNodeId(id)
         : undefined,
@@ -716,6 +746,13 @@ export class McpResponse implements Response {
         ? (id: string) => page.resolveCdpRequestId(id)
         : undefined,
     });
+    let commentsSnapshotRegenerated: 'standard' | 'verbose' | undefined;
+    if (page?.textSnapshot && page.textSnapshot !== initialSnapshot) {
+      commentsSnapshotRegenerated = page.textSnapshot.verbose
+        ? 'verbose'
+        : 'standard';
+    }
+    return {formatter, commentsSnapshotRegenerated};
   }
 
   async handle(
@@ -733,7 +770,7 @@ export class McpResponse implements Response {
       webmcpTools,
       consoleMessages,
       networkRequests,
-      comments,
+      commentsResult,
     ] = await Promise.all([
       this.#handleSnapshot(context),
       this.#handleAttachedNetworkRequest(context),
@@ -746,7 +783,7 @@ export class McpResponse implements Response {
     ]);
 
     if (this.#includeExtensionServiceWorkers) {
-      await context.createExtensionServiceWorkersSnapshot();
+      context.createWorkersSnapshot();
     }
 
     let extensions: Map<string, Extension> | undefined;
@@ -768,7 +805,9 @@ export class McpResponse implements Response {
         lighthouseResult: this.#attachedLighthouseResult,
         thirdPartyDeveloperTools,
         webmcpTools,
-        comments,
+        comments: commentsResult?.formatter,
+        commentsSnapshotRegenerated:
+          commentsResult?.commentsSnapshotRegenerated,
         errorMessage: this.#error?.message,
       },
       dataFormat,
@@ -800,6 +839,7 @@ export class McpResponse implements Response {
       thirdPartyDeveloperTools?: ToolGroups;
       webmcpTools?: WebMCPTool[];
       comments?: CommentFormatter;
+      commentsSnapshotRegenerated?: 'standard' | 'verbose';
       errorMessage?: string;
     },
     dataFormat: DataFormat = 'default',
@@ -857,9 +897,11 @@ export class McpResponse implements Response {
       heapSnapshotDetailedClassDiff?: HeapSnapshotDetailedClassDiff;
       heapSnapshotDuplicateStrings?: readonly DuplicateStringGroup[];
       heapSnapshotObjectDetails?: DevTools.HeapSnapshotModel.HeapSnapshotModel.ObjectInfo;
+      heapSnapshotContextAnalysis?: ContextAnalysisReport;
       extensionServiceWorkers?: object[];
       extensionPages?: object[];
       comments?: StructuredCommentThread[];
+      commentsSnapshotRegenerated?: 'standard' | 'verbose';
       matchedStyles?: object;
       errorMessage?: string;
       navigatedToUrl?: string;
@@ -896,7 +938,7 @@ export class McpResponse implements Response {
     if (this.#reconnectNotice) {
       structuredContent.reconnected = true;
       response.push(
-        `Note: the browser was restarted or reconnected since the last call. Page ids have changed. Call ${listPages().name} to see open pages.`,
+        `Note: the browser was restarted or reconnected since the last call. Page ids have changed. Call ${listPages(this.#args).name} to see open pages.`,
       );
     }
     if (this.#textResponseLines.length) {
@@ -963,7 +1005,7 @@ export class McpResponse implements Response {
           : '';
       response.push(`# Open dialog
 ${dialog.type()}: ${dialog.message()}${defaultValueIfNeeded}.
-Call ${handleDialog.name} to handle it before continuing.`);
+Call ${handleDialog(this.#args).name} to handle it before continuing.`);
       structuredContent.dialog = {
         type: dialog.type(),
         message: dialog.message(),
@@ -979,7 +1021,7 @@ Call ${handleDialog.name} to handle it before continuing.`);
           acc: {regularPages: McpPage[]; extensionPages: McpPage[]},
           mcpPage: McpPage,
         ) => {
-          if (mcpPage.pptrPage.url().startsWith('chrome-extension://')) {
+          if (mcpPage.url().startsWith('chrome-extension://')) {
             acc.extensionPages.push(mcpPage);
           } else {
             acc.regularPages.push(mcpPage);
@@ -1009,10 +1051,10 @@ Call ${handleDialog.name} to handle it before continuing.`);
           const contextLabel = isolatedContextName
             ? ` isolatedContext=${isolatedContextName}`
             : '';
-          const title = await fetchPageTitle(mcpPage.pptrPage);
+          const title = mcpPage.getTitle();
           const pageLabel = title
-            ? `${truncateTitle(title)} (${mcpPage.pptrPage.url()})`
-            : mcpPage.pptrPage.url();
+            ? `${truncateTitle(title)} (${mcpPage.url()})`
+            : mcpPage.url();
           parts.push(
             `${mcpPage.id}: ${pageLabel}${context.isPageSelected(mcpPage) ? ' [selected]' : ''}${contextLabel}`,
           );
@@ -1031,10 +1073,10 @@ Call ${handleDialog.name} to handle it before continuing.`);
             const contextLabel = isolatedContextName
               ? ` isolatedContext=${isolatedContextName}`
               : '';
-            const title = await fetchPageTitle(mcpPage.pptrPage);
+            const title = mcpPage.getTitle();
             const pageLabel = title
-              ? `${truncateTitle(title)} (${mcpPage.pptrPage.url()})`
-              : mcpPage.pptrPage.url();
+              ? `${truncateTitle(title)} (${mcpPage.url()})`
+              : mcpPage.url();
             response.push(
               `${mcpPage.id}: ${pageLabel}${context.isPageSelected(mcpPage) ? ' [selected]' : ''}${contextLabel}`,
             );
@@ -1048,23 +1090,27 @@ Call ${handleDialog.name} to handle it before continuing.`);
     }
 
     if (this.#includeExtensionServiceWorkers) {
-      if (context.getExtensionServiceWorkers().length) {
+      const extensionServiceWorkers = context
+        .getWorkers()
+        .filter(worker => worker.type === 'service_worker');
+
+      if (extensionServiceWorkers.length) {
         response.push(`## Extension Service Workers`);
       }
 
-      for (const extensionServiceWorker of context.getExtensionServiceWorkers()) {
+      for (const extensionServiceWorker of extensionServiceWorkers) {
         response.push(
           `${extensionServiceWorker.id}: ${extensionServiceWorker.url}`,
         );
       }
-      structuredContent.extensionServiceWorkers = context
-        .getExtensionServiceWorkers()
-        .map(extensionServiceWorker => {
+      structuredContent.extensionServiceWorkers = extensionServiceWorkers.map(
+        extensionServiceWorker => {
           return {
             id: extensionServiceWorker.id,
             url: extensionServiceWorker.url,
           };
-        });
+        },
+      );
     }
 
     if (this.#tabId) {
@@ -1316,6 +1362,33 @@ Call ${handleDialog.name} to handle it before continuing.`);
         );
         structuredContent.heapSnapshotObjectDetails = objectInfo;
       }
+      const contextAnalysis = this.#heapSnapshotOptions.contextAnalysis;
+      if (contextAnalysis) {
+        const contextAnalysisOptions =
+          this.#heapSnapshotOptions.contextAnalysisOptions;
+        const rankedContexts = collectRankedContexts(contextAnalysis, {
+          retainedSize: contextAnalysisOptions?.retainedSize,
+          scopeInfoNodeId: contextAnalysisOptions?.scopeInfoNodeId,
+        });
+        const paginationData = this.#dataWithPagination(rankedContexts, {
+          pageIdx: contextAnalysisOptions?.pageIdx ?? 0,
+          pageSize: contextAnalysisOptions?.pageSize,
+        });
+        const report: ContextAnalysisReport = {
+          contexts: paginationData.items,
+          scriptsWithoutScopes: contextAnalysis.scriptsWithoutScopes,
+        };
+
+        response.push('### Context Analysis');
+        structuredContent.pagination = paginationData.pagination;
+        response.push(...paginationData.info);
+        response.push(
+          compactEncode
+            ? compactEncode(report)
+            : HeapSnapshotFormatter.formatContextAnalysis(report),
+        );
+        structuredContent.heapSnapshotContextAnalysis = report;
+      }
     }
 
     if (data.detailedNetworkRequest) {
@@ -1454,6 +1527,13 @@ Call ${handleDialog.name} to handle it before continuing.`);
       response.push(
         compactEncode ? compactEncode(commentsJson) : data.comments.toString(),
       );
+      if (data.commentsSnapshotRegenerated) {
+        response.push(
+          `Note: DevTools comments regenerated the ${data.commentsSnapshotRegenerated} text snapshot.`,
+        );
+        structuredContent.commentsSnapshotRegenerated =
+          data.commentsSnapshotRegenerated;
+      }
     }
 
     if (this.#cssStylesData) {
@@ -1536,8 +1616,9 @@ Call ${handleDialog.name} to handle it before continuing.`);
     }
 
     const {startIndex, endIndex, currentPage, totalPages} = paginationResult;
+    const displayStartIndex = data.length === 0 ? 0 : startIndex + 1;
     response.push(
-      `Showing ${startIndex + 1}-${endIndex} of ${data.length} (Page ${currentPage + 1} of ${totalPages}).`,
+      `Showing ${displayStartIndex}-${endIndex} of ${data.length} (Page ${currentPage + 1} of ${totalPages}).`,
     );
     if (pagination) {
       if (paginationResult.hasNextPage) {
@@ -1574,13 +1655,6 @@ function truncateTitle(title: string, maxLength = 50): string {
   return title.slice(0, maxLength - 3) + '...';
 }
 
-async function fetchPageTitle(page: Page): Promise<string> {
-  return Promise.race([
-    page.title().catch(() => ''),
-    new Promise<string>(resolve => setTimeout(() => resolve(''), 1000)),
-  ]);
-}
-
 function createStructuredPage(
   mcpPage: McpPage,
   context: McpContext,
@@ -1596,7 +1670,7 @@ function createStructuredPage(
     isolatedContext?: string;
   } = {
     id: mcpPage.id,
-    url: mcpPage.pptrPage.url(),
+    url: mcpPage.url(),
     title,
     selected: context.isPageSelected(mcpPage),
   };

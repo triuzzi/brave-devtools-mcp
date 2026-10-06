@@ -14,7 +14,7 @@
 
 Start the MCP server with debugging enabled and a log file:
 
-- `DEBUG=* npx brave-mcp@latest --log-file=/path/to/brave-mcp.log`
+- `NODE_DEBUG=* npx brave-mcp@latest --log-file=/path/to/brave-mcp.log`
 
 Using `.mcp.json` to debug while using a client:
 
@@ -26,7 +26,7 @@ Using `.mcp.json` to debug while using a client:
       "command": "npx",
       "args": ["brave-mcp@latest", "--log-file", "/path/to/brave-mcp.log"],
       "env": {
-        "DEBUG": "*"
+        "NODE_DEBUG": "*"
       }
     }
   }
@@ -76,6 +76,19 @@ Brave, which requires permissions to create its own sandboxes. As a workaround,
 either disable sandboxing for `brave-mcp` in your MCP client or use
 `--browser-url` to connect to a Brave instance that you start manually outside
 of the MCP client sandbox.
+
+### Running as root
+
+Brave does not start as root
+([crbug.com/638180](https://crbug.com/638180)). It exits immediately and
+`brave-devtools-mcp` reports that Brave failed to start. This is a common
+issue in containers and CI images that run everything as root.
+
+Run `brave-devtools-mcp` as a non-root user. In a container, create an
+unprivileged user in the image and switch to it with `USER`; the build itself
+can still run as root. For the host-side setup that Brave's sandbox needs, see
+Puppeteer's
+[Setting up Chrome Linux sandbox](https://pptr.dev/troubleshooting#setting-up-chrome-linux-sandbox).
 
 ### WSL
 
