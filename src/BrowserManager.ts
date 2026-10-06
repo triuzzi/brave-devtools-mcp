@@ -9,6 +9,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import {
+  assertLoopbackCdpHttpReady,
+  httpBaseFromWsEndpoint,
+  withDisabledDevToolsAcceptDebugging,
+} from './cdpReadiness.js';
 import type {ParsedArguments} from './config/ConfigParser.js';
 import type {Browser, LaunchOptions} from './third_party/index.js';
 import {Mutex, puppeteer} from './third_party/index.js';
@@ -387,7 +392,12 @@ export class BrowserManager {
       });
     }
 
-    const args: LaunchOptions['args'] = [...(this.#serverArgs.braveArg ?? [])];
+    // Suppress Chromium/Brave's per-connection "Allow remote debugging?"
+    // consent gate for MCP-launched profiles. UI-enabled remote debugging
+    // still requires a full quit + CLI-owned relaunch; see cdpReadiness.ts.
+    const args: LaunchOptions['args'] = withDisabledDevToolsAcceptDebugging([
+      ...(this.#serverArgs.braveArg ?? []),
+    ]);
     if (proxyServer) {
       args.push(`--proxy-server=${proxyServer}`);
     }
@@ -494,13 +504,16 @@ export class BrowserManager {
     };
 
     let autoConnect = false;
+    let readinessHttpBase: string | undefined;
     if (wsEndpoint) {
       connectOptions.browserWSEndpoint = wsEndpoint;
       if (wsHeaders) {
         connectOptions.headers = wsHeaders;
       }
+      readinessHttpBase = httpBaseFromWsEndpoint(wsEndpoint);
     } else if (browserURL) {
       connectOptions.browserURL = browserURL;
+      readinessHttpBase = browserURL;
     } else if (channel || userDataDir) {
       // Puppeteer's `channel` connect option only knows Chrome's install
       // locations, so Brave's DevToolsActivePort file is read directly.
@@ -527,9 +540,13 @@ export class BrowserManager {
         }
         const browserWSEndpoint = `ws://127.0.0.1:${port}${rawPath}`;
         connectOptions.browserWSEndpoint = browserWSEndpoint;
+        readinessHttpBase = `http://127.0.0.1:${port}`;
       } catch (error) {
         throw new Error(
-          `Could not connect to Brave in ${activeUserDataDirectory}. Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.`,
+          `Could not connect to Brave in ${activeUserDataDirectory}. Ensure Brave is running with CLI-owned remote debugging (` +
+            `--remote-debugging-address=127.0.0.1 --remote-debugging-port=<port> ` +
+            `--disable-features=DevToolsAcceptDebuggingConnections). ` +
+            `UI-only enablement via brave://inspect/#remote-debugging requires per-connection approval and is not supported for unattended agents.`,
           {
             cause: error,
           },
@@ -539,6 +556,10 @@ export class BrowserManager {
       throw new Error(
         'Either browserURL, wsEndpoint, channel or userDataDir must be provided',
       );
+    }
+
+    if (readinessHttpBase) {
+      await assertLoopbackCdpHttpReady(readinessHttpBase);
     }
 
     logger?.('Connecting Puppeteer to ', JSON.stringify(connectOptions));
@@ -551,7 +572,11 @@ export class BrowserManager {
       return connected;
     } catch (err) {
       throw new Error(
-        `Could not connect to Brave. ${autoConnect ? `Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.` : `Check if Brave is running.`}`,
+        `Could not connect to Brave. ${
+          autoConnect
+            ? `Ensure Brave is running with CLI-owned remote debugging and that http://127.0.0.1:<port>/json/version succeeds.`
+            : `Check if Brave is running and that the DevTools HTTP endpoint answers /json/version.`
+        }`,
         {
           cause: err,
         },

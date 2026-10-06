@@ -174,14 +174,44 @@ claude mcp add brave-devtools --scope user npx brave-mcp@latest
 This bypasses the git clone entirely and uses npm/npx to fetch the package. Note
 that this method installs only the MCP server without the bundled skills.
 
+### Consent-gated remote debugging (`/json/version` returns 404)
+
+Symptoms:
+
+- Brave is running and something is listening on `127.0.0.1:9222`.
+- `curl http://127.0.0.1:9222/json/version` returns **404**.
+- Connecting with `--autoConnect`, `--browser-url`, or `--wsEndpoint` either
+  fails immediately with a consent-gated error, or (on older `brave-mcp`
+  versions) raises Brave's native **Allow remote debugging?** dialog and
+  focuses the browser window.
+
+Cause: remote debugging was enabled through the browser UI
+(`brave://inspect/#remote-debugging`). That path requires per-connection
+approval. `RemoteDebuggingAllowed` policy alone does not suppress it.
+
+Fix:
+
+1. Fully quit every Brave window (not just close a tab).
+2. Relaunch with CLI-owned debugging:
+
+   ```bash
+   brave-browser \
+     --user-data-dir=/path/to/profile \
+     --remote-debugging-address=127.0.0.1 \
+     --remote-debugging-port=9222 \
+     --disable-features=DevToolsAcceptDebuggingConnections
+   ```
+
+3. Confirm `curl -fsS http://127.0.0.1:9222/json/version` succeeds.
+4. Restart the MCP client / `brave-mcp` process.
+
 ### Connection timeouts with `--autoConnect`
 
 If you are using the `--autoConnect` flag and tools like `list_pages`, `new_page`, or `navigate_page` fail with a timeout (e.g., `ProtocolError: Network.enable timed out` or `The socket connection was closed unexpectedly`), this usually means the MCP server cannot handshake with the running Brave instance correctly. Ensure:
 
-1. Chrome 144+ is **already** running.
-2. Remote debugging is enabled in Chrome via `brave://inspect/#remote-debugging`.
-3. You have allowed the remote debugging connection prompt in the browser.
-4. There is no other MCP server or tool trying to connect to the same debugging port.
+1. Brave is **already** running with CLI-owned remote debugging (see above).
+2. `http://127.0.0.1:<port>/json/version` succeeds.
+3. There is no other MCP server or tool trying to connect to the same debugging port.
 
 > [!IMPORTANT]
 > In Chrome versions up to 149, connection issues may be caused by frozen or unloaded tabs.
