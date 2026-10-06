@@ -180,13 +180,46 @@ claude mcp add brave-devtools --scope user npx brave-mcp@latest
 This bypasses the git clone entirely and uses npm/npx to fetch the package. Note
 that this method installs only the MCP server without the bundled skills.
 
+### Consent-gated remote debugging (`/json/version` returns 404)
+
+Symptoms:
+
+- Brave is running and something is listening on `127.0.0.1:9222`.
+- `curl http://127.0.0.1:9222/json/version` returns **404**.
+- `brave-mcp` fails to attach and its error message says the endpoint answers
+  `/json/version` with 404. On older versions it may instead raise Brave's
+  native **Allow remote debugging?** dialog and focus the browser window.
+
+Cause: remote debugging was enabled through the browser UI
+(`brave://inspect/#remote-debugging`). That path requires approval for each
+connection, and Brave answers `/json/*` with 404 until the connection is
+approved. The `RemoteDebuggingAllowed` policy alone does not suppress it.
+
+Fix, either way:
+
+1. **Approve the connection.** Run a tool that needs the browser; Brave shows
+   **Allow remote debugging?**; click **Allow**. The next connection succeeds.
+2. **Or start Brave with a debugging port**, which needs no approval. Fully quit
+   every Brave window (not just close a tab) and relaunch:
+
+   ```bash
+   "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" \
+     --user-data-dir="$HOME/.brave-agent" \
+     --remote-debugging-address=127.0.0.1 \
+     --remote-debugging-port=9222
+   ```
+
+   Then confirm `curl -fsS http://127.0.0.1:9222/json/version` succeeds, point
+   the server at `--browserUrl=http://127.0.0.1:9222`, and restart the MCP
+   client / `brave-mcp` process.
+
 ### Connection timeouts with `--autoConnect`
 
 If you are using the `--autoConnect` flag and tools like `list_pages`, `new_page`, or `navigate_page` fail with a timeout (e.g., `ProtocolError: Network.enable timed out` or `The socket connection was closed unexpectedly`), this usually means the MCP server cannot handshake with the running Brave instance correctly. Ensure:
 
 1. A recent Brave release is **already** running.
-2. Remote debugging is enabled in Brave via `brave://inspect/#remote-debugging`.
-3. You have allowed the remote debugging connection prompt in the browser.
+2. Remote debugging is enabled in Brave via `brave://inspect/#remote-debugging`, or Brave was started with `--remote-debugging-port`.
+3. You have allowed the remote debugging connection prompt in the browser, or `http://127.0.0.1:<port>/json/version` succeeds.
 4. There is no other MCP server or tool trying to connect to the same debugging port.
 
 > [!IMPORTANT]

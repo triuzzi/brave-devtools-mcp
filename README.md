@@ -16,39 +16,48 @@
 
 ## Install in one command
 
-The commands below use `--autoConnect`, which attaches `brave-mcp` to the Brave you already have open, so the agent works with your real tabs and signed-in sessions. Enable it once: open `brave://inspect/#remote-debugging` in Brave and check **Allow remote debugging for this browser instance**. Brave keeps this setting across restarts.
+The commands below use `--browserUrl`, which attaches `brave-mcp` to a Brave you start with a loopback debugging port, so the agent works with your real tabs and signed-in sessions. Start that Brave first, with a dedicated profile:
+
+```bash
+"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" \
+  --user-data-dir="$HOME/.brave-agent" \
+  --remote-debugging-address=127.0.0.1 \
+  --remote-debugging-port=9222
+```
+
+See [Connecting to a running Brave instance](./docs/advanced-usage.md#connecting-to-a-running-brave-instance) for the Linux and Windows commands, the `--autoConnect` alternative, and the port-security notes.
 
 ### Claude Code
 
 ```bash
-claude mcp add brave-devtools --scope user -- npx -y brave-mcp@latest --autoConnect
+claude mcp add brave-devtools --scope user -- npx -y brave-mcp@latest --browserUrl=http://127.0.0.1:9222
 ```
 
 ### Cursor
 
 ```bash
-cursor --add-mcp '{"name":"brave-devtools","command":"npx","args":["-y","brave-mcp@latest","--autoConnect"]}'
+cursor --add-mcp '{"name":"brave-devtools","command":"npx","args":["-y","brave-mcp@latest","--browserUrl=http://127.0.0.1:9222"]}'
 ```
 
 ### Codex
 
 ```bash
-codex mcp add brave-devtools -- npx -y brave-mcp@latest --autoConnect
+codex mcp add brave-devtools -- npx -y brave-mcp@latest --browserUrl=http://127.0.0.1:9222
 ```
 
 ### OpenCode
 
 ```bash
-opencode mcp add brave-devtools -- npx -y brave-mcp@latest --autoConnect
+opencode mcp add brave-devtools -- npx -y brave-mcp@latest --browserUrl=http://127.0.0.1:9222
 ```
 
 Restart your client, then try this prompt:
 
 > Open my app in Brave. Find console errors and failed network requests, inspect the accessibility tree, run Lighthouse, and explain the highest-impact issue.
 
-When the agent connects, Brave asks for permission. Click **Allow**.
+With the debugging port, the agent attaches to every tab in that Brave without a native permission prompt. If `http://127.0.0.1:9222/json/version` answers 404 while the port is open, Brave is waiting for the **Allow remote debugging?** approval: approve it, or relaunch Brave with the flags above.
 
-`--autoConnect` attaches to Brave Release unless you add `--channel beta` or `--channel nightly`. To keep the agent out of your everyday browser, leave out `--autoConnect`: the server then launches its own Brave with a dedicated profile.
+`--autoConnect` is the alternative when you would rather enable remote debugging from `brave://inspect/#remote-debugging` and approve each connection; it attaches to Brave Release unless you add `--channel beta` or `--channel nightly`. To keep the agent out of your everyday browser, leave out both flags: the server then launches its own Brave with a dedicated profile.
 
 The same server is also published as [`brave-devtools-mcp`](https://www.npmjs.com/package/brave-devtools-mcp), so `npx brave-devtools-mcp@latest` works identically if you prefer a name that matches upstream's `chrome-devtools-mcp`. The `brave-devtools-mcp` name was originally published by [@neolivz](https://github.com/neolivz) — thanks, Jishnu.
 
@@ -115,14 +124,14 @@ You can disable these update checks by setting `BRAVE_DEVTOOLS_MCP_NO_UPDATE_CHE
 
 ## Getting started
 
-Enable remote debugging once at `brave://inspect/#remote-debugging`, then add the following config to your MCP client to attach to your running Brave:
+Start Brave with a loopback debugging port (see [advanced usage](./docs/advanced-usage.md#connecting-to-a-running-brave-instance)), then add the following config to your MCP client to attach to that Brave:
 
 ```json
 {
   "mcpServers": {
     "brave-devtools": {
       "command": "npx",
-      "args": ["-y", "brave-mcp@latest", "--autoConnect"]
+      "args": ["-y", "brave-mcp@latest", "--browserUrl=http://127.0.0.1:9222"]
     }
   }
 }
@@ -131,7 +140,7 @@ Enable remote debugging once at `brave://inspect/#remote-debugging`, then add th
 > [!NOTE]
 > Using `brave-mcp@latest` ensures that your MCP client will always use the latest version of the Brave DevTools MCP server.
 
-Leave out `--autoConnect` to have the server launch its own Brave with a dedicated profile instead.
+Leave out `--browserUrl` to have the server launch its own Brave with a dedicated profile instead.
 
 If you are interested in doing only basic browser tasks, use the `--slim` mode:
 
@@ -150,7 +159,7 @@ See [Slim tool reference](./docs/slim-tool-reference.md).
 
 ### MCP Client configuration
 
-For setup instructions specific to your editor or agent (e.g. Antigravity, Claude Code, Cursor, VS Code), please see our [Client Configurations Guide][client-configurations-guide]. To attach to your running Brave, add `--autoConnect` to the server arguments shown there.
+For setup instructions specific to your editor or agent (e.g. Antigravity, Claude Code, Cursor, VS Code), please see our [Client Configurations Guide][client-configurations-guide]. To attach to your running Brave, add `--browserUrl=http://127.0.0.1:9222` (or `--autoConnect` for the `brave://inspect` flow) to the server arguments shown there.
 
 ### Your first prompt
 
@@ -160,10 +169,10 @@ Enter the following prompt in your MCP Client to check if everything is working:
 Check the performance of https://brave.com
 ```
 
-Brave asks you to allow the connection. After you click **Allow**, your MCP client opens the page in Brave and records a performance trace.
+Your MCP client opens the page in Brave and records a performance trace. If Brave raises an **Allow remote debugging?** dialog, approve it or switch to the debugging-port setup — see [Troubleshooting](./docs/troubleshooting.md#consent-gated-remote-debugging-jsonversion-returns-404).
 
 > [!NOTE]
-> The MCP server connects to Brave only when the MCP client first uses a tool that needs a browser, not when the client starts. Without `--autoConnect`, that is when the server launches its own Brave.
+> The MCP server connects to Brave only when the MCP client first uses a tool that needs a browser, not when the client starts. Without `--browserUrl` or `--autoConnect`, that is when the server launches its own Brave.
 
 ## CLI
 

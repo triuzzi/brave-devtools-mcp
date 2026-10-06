@@ -28,6 +28,7 @@ ts_library("tests") {
     "ToolHandler.test.ts",
     "browser-discovery.test.ts",
     "browser.test.ts",
+    "cdp-readiness.test.ts",
     "cli-imports.test.ts",
     "cli.test.ts",
     "collectors/PageCollector.test.ts",
