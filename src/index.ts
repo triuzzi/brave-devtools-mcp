@@ -8,26 +8,27 @@ import type fs from 'node:fs';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 
-import type {Channel} from './browser.js';
-import {ensureBrowserConnected, ensureBrowserLaunched} from './browser.js';
-import {type ParsedArguments} from './config/mcp-options.js';
+import {BrowserManager} from './BrowserManager.js';
+import {type ParsedArguments} from './config/ConfigParser.js';
 import {loadIssueDescriptions} from './devtools/issueDescriptions.js';
 import {McpContext} from './McpContext.js';
 import {ClearcutLogger} from './telemetry/ClearcutLogger.js';
 import {FilePersistence} from './telemetry/persistence.js';
 import {
-  McpServer as SdkMcpServer,
   type CallToolResult,
+  McpServer as SdkMcpServer,
+  type RegisteredTool,
   type Root,
   type Transport,
-  SetLevelRequestSchema,
-  ListRootsResultSchema,
-  RootsListChangedNotificationSchema,
   Mutex,
   puppeteer,
 } from './third_party/index.js';
 import {ToolHandler} from './ToolHandler.js';
-import type {DefinedPageTool, ToolDefinition} from './tools/ToolDefinition.js';
+import {
+  type DefinedPageTool,
+  isAvailableInMode,
+  type ToolDefinition,
+} from './tools/ToolDefinition.js';
 import {createTools} from './tools/tools.js';
 import {logger} from './utils/logger.js';
 import {VERSION} from './version.js';
@@ -45,13 +46,19 @@ puppeteer.setFollowSymlinks(false);
 const ROOTS_REQUEST_TIMEOUT = 5_000;
 
 export interface McpServerOptions {
+  browserManager: BrowserManager;
   logFile?: fs.WriteStream;
+}
+
+interface ToolEntry {
+  handler: ToolHandler;
+  registeredTool: RegisteredTool;
 }
 
 export class McpServer {
   readonly server: SdkMcpServer;
   #serverArgs: ParsedArguments;
-  #options: McpServerOptions;
+  #browserManager: BrowserManager;
   #context?: McpContext;
 
   /**
@@ -61,13 +68,11 @@ export class McpServer {
    */
   #lastClientRoots?: Root[];
   #toolMutex = new Mutex();
+  #tools = new Map<string, ToolEntry>();
 
-  private constructor(
-    serverArgs: ParsedArguments,
-    options: McpServerOptions = {},
-  ) {
+  private constructor(serverArgs: ParsedArguments, options: McpServerOptions) {
     this.#serverArgs = serverArgs;
-    this.#options = options;
+    this.#browserManager = options.browserManager;
 
     if (this.#serverArgs.usageStatistics) {
       ClearcutLogger.initialize({
@@ -87,10 +92,14 @@ export class McpServer {
         title: 'Brave DevTools MCP server',
         version: VERSION,
       },
-      {capabilities: {logging: {}}},
+      {
+        capabilities: {logging: {}, tools: {listChanged: true}},
+        // Enabling or updating many tools at once sends a single notification.
+        debouncedNotificationMethods: ['notifications/tools/list_changed'],
+      },
     );
 
-    this.server.server.setRequestHandler(SetLevelRequestSchema, () => {
+    this.server.server.setRequestHandler('logging/setLevel', () => {
       return {};
     });
 
@@ -102,7 +111,7 @@ export class McpServer {
       if (this.server.server.getClientCapabilities()?.roots) {
         void this.#updateRoots();
         this.server.server.setNotificationHandler(
-          RootsListChangedNotificationSchema,
+          'notifications/roots/list_changed',
           () => {
             void this.#updateRoots();
           },
@@ -125,18 +134,63 @@ export class McpServer {
     return await this.server.connect(transport);
   }
 
+  async callTool(
+    name: string,
+    args: Record<string, unknown> = {},
+  ): Promise<CallToolResult> {
+    const toolHandler = this.#tools.get(name)?.handler;
+    if (!toolHandler) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Tool ${name} not found`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    const parseResult =
+      await toolHandler.registeredInputSchema.safeParseAsync(args);
+    if (!parseResult.success) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Input validation error: Invalid arguments for tool ${name}: ${parseResult.error.issues
+              .map(
+                issue =>
+                  `${issue.path.length > 0 ? `${issue.path.join('.')}: ` : ''}${issue.message}`,
+              )
+              .join(', ')}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    return await toolHandler.handle(parseResult.data);
+  }
+
   /**
    * Closes the MCP connection and disposes internal context/listeners.
    */
   async close(): Promise<void> {
-    this.#context?.dispose();
-    this.#context = undefined;
-    await this.server.close();
+    try {
+      this.#context?.dispose();
+    } catch (err) {
+      logger?.('Failed to dispose context', err);
+    } finally {
+      this.#context = undefined;
+    }
+    await Promise.allSettled([
+      this.#browserManager.close(),
+      this.server.close(),
+    ]);
   }
 
   [Symbol.dispose](): void {
-    this.close().catch(() => {
-      // TODO: wire up the logger
+    this.close().catch(err => {
+      logger?.('Failed to dispose McpServer', err);
     });
   }
 
@@ -146,7 +200,7 @@ export class McpServer {
 
   static async from(
     serverArgs: ParsedArguments,
-    options: McpServerOptions = {},
+    options: McpServerOptions,
   ): Promise<McpServer> {
     const server = new McpServer(serverArgs, options);
     await server.#init();
@@ -154,9 +208,11 @@ export class McpServer {
   }
 
   async #init(): Promise<void> {
-    const tools = createTools(this.#serverArgs);
-    for (const tool of tools) {
-      this.#registerTool(tool);
+    for (const tool of createTools(this.#serverArgs)) {
+      // Slim and regular tools may share names, only register the current mode.
+      if (isAvailableInMode(tool, this.#serverArgs)) {
+        this.#registerTool(tool);
+      }
     }
     await loadIssueDescriptions();
   }
@@ -167,7 +223,7 @@ export class McpServer {
         ? []
         : (this.#serverArgs.filesystemRoot ?? [])
     ).map(root => {
-      const rootPath = path.resolve(String(root));
+      const rootPath = path.resolve(root);
       return {
         uri: pathToFileURL(rootPath).href,
         name: path.basename(rootPath) || rootPath,
@@ -189,12 +245,11 @@ export class McpServer {
       return;
     }
     try {
-      const roots = await this.server.server.request(
+      const result = await this.server.server.request(
         {method: 'roots/list'},
-        ListRootsResultSchema,
         timeout === undefined ? undefined : {timeout},
       );
-      this.#lastClientRoots = roots.roots;
+      this.#lastClientRoots = result.roots;
       this.#context?.setRoots(this.#combinedRoots());
     } catch (e) {
       logger?.('Failed to list roots', e);
@@ -202,68 +257,19 @@ export class McpServer {
   }
 
   async #getContext(): Promise<McpContext> {
-    const braveArguments: string[] = (this.#serverArgs.braveArg ?? []).map(
-      String,
-    );
-    const ignoredDefaultBraveArguments: string[] = (
-      this.#serverArgs.ignoreDefaultBraveArg ?? []
-    ).map(String);
-    if (this.#serverArgs.proxyServer) {
-      braveArguments.push(`--proxy-server=${this.#serverArgs.proxyServer}`);
-    }
-    const devtools = this.#serverArgs.experimentalDevtools ?? false;
-    const blocklist = this.#serverArgs.blockedUrlPattern
-      ? this.#serverArgs.blockedUrlPattern.map(String)
-      : undefined;
-    const allowlist = this.#serverArgs.allowedUrlPattern
-      ? this.#serverArgs.allowedUrlPattern.map(String)
-      : undefined;
-
-    const channel = this.#serverArgs.channel as Channel | undefined;
-
-    const browser =
-      this.#serverArgs.browserUrl ||
-      this.#serverArgs.wsEndpoint ||
-      this.#serverArgs.autoConnect
-        ? await ensureBrowserConnected({
-            browserURL: this.#serverArgs.browserUrl,
-            wsEndpoint: this.#serverArgs.wsEndpoint,
-            wsHeaders: this.#serverArgs.wsHeaders,
-            // Important: only pass channel, if autoConnect is true.
-            channel: this.#serverArgs.autoConnect ? channel : undefined,
-            userDataDir: this.#serverArgs.userDataDir,
-            devtools,
-            blocklist,
-            allowlist,
-          })
-        : await ensureBrowserLaunched({
-            headless: this.#serverArgs.headless,
-            executablePath: this.#serverArgs.executablePath,
-            channel,
-            isolated: this.#serverArgs.isolated ?? false,
-            userDataDir: this.#serverArgs.userDataDir,
-            logFile: this.#options.logFile,
-            viewport: this.#serverArgs.viewport,
-            braveArgs: braveArguments,
-            ignoreDefaultBraveArgs: ignoredDefaultBraveArguments,
-            acceptInsecureCerts: this.#serverArgs.acceptInsecureCerts,
-            devtools,
-            enableExtensions: this.#serverArgs.categoryExtensions,
-            viaCli: this.#serverArgs.viaCli,
-            blocklist,
-            allowlist,
-          });
+    const browser = await this.#browserManager.ensureBrowser();
 
     if (this.#context?.browser !== browser) {
       this.#context?.dispose();
       this.#context = await McpContext.from(browser, logger, {
-        experimentalDevToolsDebugging: devtools,
+        experimentalDevToolsDebugging:
+          this.#serverArgs.experimentalDevtools ?? false,
         experimentalIncludeAllPages:
           this.#serverArgs.experimentalIncludeAllPages,
         performanceCrux: this.#serverArgs.performanceCrux,
         sourceMaps: this.#serverArgs.sourceMaps,
-        allowList: allowlist,
-        blocklist: blocklist,
+        allowlist: this.#serverArgs.allowedUrlPattern,
+        blocklist: this.#serverArgs.blockedUrlPattern,
         allowUnrestrictedPaths: this.#serverArgs.allowUnrestrictedPaths,
         // Surfaces a one-time note in the next response after a reconnect.
         reconnected: this.#context !== undefined,
@@ -293,29 +299,35 @@ export class McpServer {
     return this.#context;
   }
 
-  #registerTool(tool: ToolDefinition | DefinedPageTool): void {
-    const toolHandler = new ToolHandler(
+  #createToolHandler(tool: ToolDefinition | DefinedPageTool): ToolHandler {
+    return new ToolHandler(
       tool,
       this.#serverArgs,
       () => this.#getContext(),
       this.#toolMutex,
+      browser => this.#browserManager.forget(browser),
+      () => this.#browserManager.abandonPendingAttempt(),
     );
+  }
 
-    if (!toolHandler.shouldRegister) {
-      return;
-    }
+  #registerTool(tool: ToolDefinition | DefinedPageTool): void {
+    const handler = this.#createToolHandler(tool);
 
-    this.server.registerTool(
+    const registeredTool = this.server.registerTool(
       tool.name,
       {
         description: tool.description,
-        inputSchema: toolHandler.registeredInputSchema,
+        inputSchema: handler.registeredInputSchema,
         annotations: tool.annotations,
       },
-      async (params): Promise<CallToolResult> => {
-        return await toolHandler.handle(params);
-      },
+      handler.handle,
     );
+
+    if (handler.disabled) {
+      registeredTool.disable();
+    }
+
+    this.#tools.set(tool.name, {handler, registeredTool});
   }
 }
 
@@ -328,9 +340,17 @@ export class McpServer {
  */
 export async function createMcpServer(
   serverArgs: ParsedArguments,
-  options: McpServerOptions = {},
+  options: {
+    logFile?: fs.WriteStream;
+  },
 ): Promise<{server: SdkMcpServer}> {
-  const server = await McpServer.from(serverArgs, options);
+  const browserManager = new BrowserManager(serverArgs, {
+    logFile: options.logFile,
+  });
+  const server = await McpServer.from(serverArgs, {
+    browserManager,
+    ...options,
+  });
   return {server: server.server};
 }
 

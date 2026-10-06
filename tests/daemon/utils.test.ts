@@ -13,7 +13,7 @@ import path from 'node:path';
 import process from 'node:process';
 import {afterEach, beforeEach, describe, it} from 'node:test';
 
-import type {ParsedArguments} from '../../src/config/mcp-options.js';
+import type {ParsedArguments} from '../../src/config/ConfigParser.js';
 import {
   serializeArgs,
   assertValidSessionId,
@@ -25,6 +25,7 @@ import {
   IS_WINDOWS,
 } from '../../src/daemon/utils.js';
 import type {YargsOptions} from '../../src/third_party/index.js';
+import {createTempDir} from '../utils.js';
 
 const APP_NAME = 'brave-devtools-mcp';
 const SESSION_ID = 'aabbccdd-1122-3344-5566-77889900aabb';
@@ -222,15 +223,17 @@ describe('getSocketPath', () => {
   });
 
   it(
-    'falls back to a /tmp socket with the uid when XDG_RUNTIME_DIR is unset',
+    'falls back to the private runtime directory when XDG_RUNTIME_DIR is unset',
     {skip: IS_WINDOWS},
     () => {
       delete process.env['XDG_RUNTIME_DIR'];
-      const uid = os.userInfo().uid;
-      assert.strictEqual(getSocketPath(''), `/tmp/${APP_NAME}-${uid}.sock`);
+      assert.strictEqual(
+        getSocketPath(''),
+        path.join(getRuntimeHome(''), 'server.sock'),
+      );
       assert.strictEqual(
         getSocketPath(SESSION_ID),
-        `/tmp/${APP_NAME}-${SESSION_ID}-${uid}.sock`,
+        path.join(getRuntimeHome(SESSION_ID), 'server.sock'),
       );
     },
   );
@@ -274,14 +277,9 @@ describe('getPidFilePath', () => {
 
 describe('daemon pid handling', () => {
   let savedXdgRuntimeDir: string | undefined;
-  let tempDir: string;
 
   beforeEach(() => {
     savedXdgRuntimeDir = process.env['XDG_RUNTIME_DIR'];
-    // Point XDG_RUNTIME_DIR at a temp dir so the pid file paths used by
-    // getDaemonPid/isDaemonRunning are isolated from any real daemon.
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdm-daemon-utils-test-'));
-    process.env['XDG_RUNTIME_DIR'] = tempDir;
   });
 
   afterEach(() => {
@@ -290,7 +288,6 @@ describe('daemon pid handling', () => {
     } else {
       process.env['XDG_RUNTIME_DIR'] = savedXdgRuntimeDir;
     }
-    fs.rmSync(tempDir, {recursive: true, force: true});
   });
 
   function writePidFile(sessionId: string, contents: string): void {
@@ -301,20 +298,28 @@ describe('daemon pid handling', () => {
 
   describe('getDaemonPid', () => {
     it('returns null when no pid file exists', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       assert.strictEqual(getDaemonPid(SESSION_ID), null);
     });
 
     it('reads the pid from the pid file, ignoring whitespace', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       writePidFile(SESSION_ID, '12345\n');
       assert.strictEqual(getDaemonPid(SESSION_ID), 12345);
     });
 
     it('is scoped per session id', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       writePidFile(SESSION_ID, '12345\n');
       assert.strictEqual(getDaemonPid('00000000-0000'), null);
     });
 
     it('returns null for empty or non-numeric pid files', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       writePidFile(SESSION_ID, '');
       assert.strictEqual(getDaemonPid(SESSION_ID), null);
       writePidFile(SESSION_ID, 'not-a-pid');
@@ -322,6 +327,8 @@ describe('daemon pid handling', () => {
     });
 
     it('parses the leading integer of malformed contents', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       // Documents current parseInt-based behavior.
       writePidFile(SESSION_ID, '123abc');
       assert.strictEqual(getDaemonPid(SESSION_ID), 123);
@@ -330,15 +337,21 @@ describe('daemon pid handling', () => {
 
   describe('isDaemonRunning', () => {
     it('returns false when no pid file exists', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       assert.strictEqual(isDaemonRunning(SESSION_ID), false);
     });
 
     it('returns true when the pid file points to a live process', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       writePidFile(SESSION_ID, `${process.pid}\n`);
       assert.strictEqual(isDaemonRunning(SESSION_ID), true);
     });
 
     it('returns false when the pid file points to a dead process', async () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       const child = spawn(process.execPath, ['--version'], {stdio: 'ignore'});
       await once(child, 'exit');
       assert.ok(child.pid);
@@ -350,6 +363,8 @@ describe('daemon pid handling', () => {
     });
 
     it('returns false when the pid file contains 0', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       // Important: signaling pid 0 would target the whole process group, so
       // isDaemonRunning must not treat it as a live daemon.
       writePidFile(SESSION_ID, '0');
@@ -357,6 +372,8 @@ describe('daemon pid handling', () => {
     });
 
     it('returns false for non-numeric pid files', () => {
+      using tempDir = createTempDir('cdm-daemon-utils-test-');
+      process.env['XDG_RUNTIME_DIR'] = tempDir.path;
       writePidFile(SESSION_ID, 'garbage');
       assert.strictEqual(isDaemonRunning(SESSION_ID), false);
     });

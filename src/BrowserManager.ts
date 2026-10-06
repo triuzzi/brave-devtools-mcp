@@ -1,0 +1,671 @@
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import {execSync} from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import type {ParsedArguments} from './config/ConfigParser.js';
+import type {Browser, LaunchOptions} from './third_party/index.js';
+import {Mutex, puppeteer} from './third_party/index.js';
+import {logger, puppeteerLogger} from './utils/logger.js';
+import {isAllowedUrl} from './utils/url.js';
+
+type Channel = NonNullable<ParsedArguments['channel']>;
+
+// Heavy pages (e.g. Studio module dev bundles >100MB) cannot ack
+// `Network.enable` and other auto-attached domain calls within
+// puppeteer's default 180s. Once that fires, the CDP connection is
+// marked dead and every subsequent call throws — only daemon restart
+// recovers. Bumping the ceiling to 10min covers realistic loads;
+// override via env for power users.
+const PROTOCOL_TIMEOUT_MILLISECONDS = Number(
+  process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS ?? '600000',
+);
+if (
+  !Number.isSafeInteger(PROTOCOL_TIMEOUT_MILLISECONDS) ||
+  PROTOCOL_TIMEOUT_MILLISECONDS <= 0
+) {
+  throw new Error(
+    'BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer.',
+  );
+}
+
+function resolveBraveExecutablePath(channel: Channel = 'release'): string {
+  const environmentPath = process.env['BRAVE_PATH'];
+  if (environmentPath) {
+    if (!fs.existsSync(environmentPath)) {
+      throw new Error(
+        `BRAVE_PATH points to ${environmentPath} but that file does not exist.`,
+      );
+    }
+    return environmentPath;
+  }
+
+  const platform = os.platform();
+
+  if (platform === 'darwin') {
+    const paths: Record<Channel, string> = {
+      release: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+      beta: '/Applications/Brave Browser Beta.app/Contents/MacOS/Brave Browser Beta',
+      nightly:
+        '/Applications/Brave Browser Nightly.app/Contents/MacOS/Brave Browser Nightly',
+    };
+    const resolvedPath = paths[channel];
+    if (fs.existsSync(resolvedPath)) {
+      return resolvedPath;
+    }
+    throw new Error(
+      `Could not find Brave Browser (${channel}) at ${resolvedPath}. Install Brave or set the BRAVE_PATH environment variable.`,
+    );
+  }
+
+  if (platform === 'linux') {
+    const paths: Record<Channel, string[]> = {
+      release: ['brave-browser', 'brave-browser-stable'],
+      beta: ['brave-browser-beta'],
+      nightly: ['brave-browser-nightly'],
+    };
+    for (const candidate of paths[channel]) {
+      try {
+        const resolvedPath = execSync(`which ${candidate}`, {
+          encoding: 'utf8',
+        }).trim();
+        if (resolvedPath) {
+          return resolvedPath;
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+    throw new Error(
+      `Could not find Brave Browser (${channel}) in PATH. Install Brave or set the BRAVE_PATH environment variable.`,
+    );
+  }
+
+  if (platform === 'win32') {
+    const programFiles = process.env['PROGRAMFILES'] ?? 'C:\\Program Files';
+    const localApplicationData = process.env['LOCALAPPDATA'] ?? '';
+    const installDirectoryNames: Record<Channel, string> = {
+      release: 'Brave-Browser',
+      beta: 'Brave-Browser-Beta',
+      nightly: 'Brave-Browser-Nightly',
+    };
+    const candidates = [programFiles, localApplicationData].map(baseDirectory =>
+      path.join(
+        baseDirectory,
+        'BraveSoftware',
+        installDirectoryNames[channel],
+        'Application',
+        'brave.exe',
+      ),
+    );
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    throw new Error(
+      `Could not find Brave Browser (${channel}). Install Brave or set the BRAVE_PATH environment variable.`,
+    );
+  }
+
+  throw new Error(`Unsupported platform: ${platform}`);
+}
+
+function resolveBraveUserDataDirectory(channel: Channel = 'release'): string {
+  const platform = os.platform();
+  const homeDirectory = os.homedir();
+  const profileDirectoryNames: Record<Channel, string> = {
+    release: 'Brave-Browser',
+    beta: 'Brave-Browser-Beta',
+    nightly: 'Brave-Browser-Nightly',
+  };
+
+  if (platform === 'darwin') {
+    return path.join(
+      homeDirectory,
+      'Library',
+      'Application Support',
+      'BraveSoftware',
+      profileDirectoryNames[channel],
+    );
+  }
+
+  if (platform === 'linux') {
+    const configDirectory =
+      process.env['XDG_CONFIG_HOME'] ?? path.join(homeDirectory, '.config');
+    return path.join(
+      configDirectory,
+      'BraveSoftware',
+      profileDirectoryNames[channel],
+    );
+  }
+
+  if (platform === 'win32') {
+    const localApplicationData =
+      process.env['LOCALAPPDATA'] ??
+      path.join(homeDirectory, 'AppData', 'Local');
+    return path.join(
+      localApplicationData,
+      'BraveSoftware',
+      profileDirectoryNames[channel],
+      'User Data',
+    );
+  }
+
+  throw new Error(`Unsupported platform: ${platform}`);
+}
+
+export interface BrowserManagerOptions {
+  logFile?: fs.WriteStream;
+}
+
+/**
+ * Identity token for an in-flight connect/launch attempt. Instances carry no
+ * data and are never inspected structurally — only ever compared by
+ * reference (`!==`) — see BrowserManager#abandonPendingAttempt().
+ */
+class BrowserAttempt {}
+
+export class BrowserManager {
+  #browser?: Browser;
+  #browserMode?: 'launched' | 'connected';
+  #initPromise?: Promise<Browser>;
+  #mutex = new Mutex();
+  #closingCount = 0;
+  #serverArgs: ParsedArguments;
+  #options: BrowserManagerOptions;
+
+  #browserAttempt: BrowserAttempt = new BrowserAttempt();
+
+  constructor(
+    serverArgs: ParsedArguments,
+    options: BrowserManagerOptions = {},
+  ) {
+    this.#serverArgs = serverArgs;
+    this.#options = options;
+  }
+
+  static makeTargetFilter(enableExtensions = false) {
+    return function targetFilter(target: {url(): string}): boolean {
+      const url = target.url();
+      if (!url) {
+        return true;
+      }
+      return isAllowedUrl(url, {categoryExtensions: enableExtensions});
+    };
+  }
+
+  static detectDisplay(): void {
+    // Only detect display on Linux/UNIX.
+    if (os.platform() === 'win32' || os.platform() === 'darwin') {
+      return;
+    }
+    if (!process.env['DISPLAY']) {
+      try {
+        const result = execSync(
+          `ps -u $(id -u) -o pid= | xargs -I{} cat /proc/{}/environ 2>/dev/null | tr '\\0' '\\n' | grep -m1 '^DISPLAY=' | cut -d= -f2`,
+        );
+        const display = result.toString('utf8').trim();
+        process.env['DISPLAY'] = display;
+      } catch {
+        // no-op
+      }
+    }
+  }
+
+  /**
+   * Brave refuses to start as root unless the sandbox is explicitly disabled and
+   * only says so on its stderr. Because we launch with `pipe: true`, Puppeteer
+   * never surfaces that stderr and the failure reaches the client as an opaque
+   * `Protocol error (Target.setDiscoverTargets): Target closed`. Detect the
+   * situation and explain the way out instead. See https://crbug.com/638180.
+   *
+   * Returns `undefined` when the failure cannot be explained by running as root,
+   * including on platforms without uids and when the sandbox was already disabled
+   * through `--brave-arg` (in which case root is not what stopped Brave).
+   */
+  static rootSandboxLaunchError(
+    error: Error,
+    args: readonly string[],
+    uid = process.getuid?.(),
+  ): Error | undefined {
+    if (uid !== 0) {
+      return undefined;
+    }
+    if (
+      args.some(
+        arg => arg === '--no-sandbox' || arg.startsWith('--no-sandbox='),
+      )
+    ) {
+      return undefined;
+    }
+    return new Error(
+      `Brave failed to start: ${error.message}\n\n` +
+        'brave-devtools-mcp is running as root and Brave does not start as root ' +
+        '(https://crbug.com/638180). Run brave-devtools-mcp as a non-root user; in a ' +
+        'container, create an unprivileged user in the image and switch to it with ' +
+        "USER. For the setup that Brave's sandbox needs, see " +
+        'https://pptr.dev/troubleshooting#setting-up-chrome-linux-sandbox.',
+      {
+        cause: error,
+      },
+    );
+  }
+
+  async ensureBrowser(): Promise<Browser> {
+    if (this.#initPromise) {
+      return await this.#initPromise;
+    }
+    const initPromise = this.#ensureBrowserLocked();
+    this.#initPromise = initPromise;
+    try {
+      return await initPromise;
+    } finally {
+      if (this.#initPromise === initPromise) {
+        this.#initPromise = undefined;
+      }
+    }
+  }
+
+  async #ensureBrowserLocked(): Promise<Browser> {
+    if (this.#closingCount > 0) {
+      throw new Error('Browser was closed while initializing.');
+    }
+    // Captured before acquiring #mutex, not after: a caller queued here can
+    // have its own timeout fire (abandonPendingAttempt()) while it's still
+    // waiting for the lock. Capturing only after acquiring it would let such
+    // a call silently adopt the freshly-rotated token as its own baseline
+    // once the lock frees up, defeating the abandonment check entirely.
+    const attempt = this.#browserAttempt;
+    using _guard = await this.#mutex.acquire();
+    if (this.#closingCount > 0) {
+      throw new Error('Browser was closed while initializing.');
+    }
+    if (this.#browserAttempt !== attempt) {
+      // Abandoned while queued for the lock — #browser was never touched by
+      // this call, so bail immediately without #closeBrowser(), which could
+      // otherwise tear down a different, still-current attempt's browser.
+      throw new Error('Connection attempt was abandoned before it completed.');
+    }
+    if (!this.#browser?.connected) {
+      await this.#initBrowser();
+    }
+    if (
+      this.#closingCount > 0 ||
+      this.#browserAttempt !== attempt ||
+      !this.#browser
+    ) {
+      const reason =
+        this.#closingCount > 0
+          ? 'Browser was closed while initializing.'
+          : 'Connection attempt was abandoned before it completed.';
+      await this.#closeBrowser();
+      throw new Error(reason);
+    }
+    return this.#browser;
+  }
+
+  /**
+   * Signals that whoever was waiting on the in-flight ensureBrowser() call
+   * has given up (e.g. a tool-call timeout). There's no way to cancel a
+   * pending connect()/launch(), so this doesn't stop it — it rotates the
+   * token to a fresh value and clears #initPromise, so a late-resolving
+   * attempt gets discarded by #ensureBrowserLocked() instead of silently
+   * installed for a caller who already walked away.
+   *
+   * Also forgets the cached #browser, if any. This only ever fires from a
+   * getContext()-level timeout, which covers both ensureBrowser() and the
+   * McpContext initialization built on it — if ensureBrowser() already
+   * resolved and it's that later step hanging (e.g. a dead CDP transport),
+   * the token rotation alone does nothing, since #browser is already
+   * cached. Safe to forget unconditionally here: the tool mutex serializes
+   * every call, so there's no concurrent caller to disrupt.
+   */
+  abandonPendingAttempt(): void {
+    this.#browserAttempt = new BrowserAttempt();
+    this.#initPromise = undefined;
+    if (this.#browser) {
+      this.forget(this.#browser);
+    }
+  }
+
+  async #initBrowser(): Promise<Browser> {
+    if (
+      this.#serverArgs.browserUrl ||
+      this.#serverArgs.wsEndpoint ||
+      this.#serverArgs.autoConnect
+    ) {
+      return await this.#connect();
+    }
+    return await this.#launch();
+  }
+
+  async #launch(): Promise<Browser> {
+    const {
+      channel,
+      headless,
+      isolated = false,
+      categoryExtensions: enableExtensions,
+      viaCli,
+      viewport,
+      acceptInsecureCerts,
+      experimentalDevtools: devtools = false,
+      blockedUrlPattern: blocklist,
+      allowedUrlPattern: allowlist,
+      ignoreDefaultBraveArg,
+      proxyServer,
+    } = this.#serverArgs;
+
+    const profileDirName =
+      channel && channel !== 'release'
+        ? `brave-profile-${channel}`
+        : 'brave-profile';
+
+    const executablePath =
+      this.#serverArgs.executablePath ?? resolveBraveExecutablePath(channel);
+
+    let userDataDir = this.#serverArgs.userDataDir;
+    if (!isolated && !userDataDir) {
+      userDataDir = path.join(
+        os.homedir(),
+        '.cache',
+        viaCli ? 'brave-devtools-mcp-cli' : 'brave-devtools-mcp',
+        profileDirName,
+      );
+      await fs.promises.mkdir(userDataDir, {
+        recursive: true,
+      });
+    }
+
+    const args: LaunchOptions['args'] = [...(this.#serverArgs.braveArg ?? [])];
+    if (proxyServer) {
+      args.push(`--proxy-server=${proxyServer}`);
+    }
+    args.push('--hide-crash-restore-bubble');
+
+    const ignoreDefaultArgs: LaunchOptions['ignoreDefaultArgs'] =
+      ignoreDefaultBraveArg ?? false;
+
+    if (headless) {
+      args.push('--screen-info={3840x2160}');
+    }
+    if (devtools) {
+      args.push('--auto-open-devtools-for-tabs');
+    }
+
+    if (!headless) {
+      BrowserManager.detectDisplay();
+    }
+
+    let browser: Browser | undefined;
+    try {
+      browser = await puppeteer.launch({
+        targetFilter: BrowserManager.makeTargetFilter(enableExtensions),
+        executablePath,
+        defaultViewport: null,
+        userDataDir,
+        pipe: true,
+        headless,
+        args,
+        ignoreDefaultArgs,
+        acceptInsecureCerts,
+        handleDevToolsAsPage: true,
+        enableExtensions,
+        protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
+        blocklist,
+        allowlist,
+        logger: puppeteerLogger,
+      });
+      if (this.#options.logFile) {
+        // FIXME: we are probably subscribing too late to catch startup logs. We
+        // should expose the process earlier or expose the getRecentLogs() getter.
+        browser.process()?.stderr?.pipe(this.#options.logFile);
+        browser.process()?.stdout?.pipe(this.#options.logFile);
+      }
+      if (viewport) {
+        const [page] = await browser.pages();
+        await page?.resize({
+          contentWidth: viewport.width,
+          contentHeight: viewport.height,
+        });
+      }
+      this.#browserMode = 'launched';
+      this.#browser = browser;
+      const launched = browser;
+      launched.once('disconnected', () => this.#evictIfCurrent(launched));
+      return launched;
+    } catch (error) {
+      await browser?.close().catch(() => {
+        // Best-effort cleanup if post-launch setup failed.
+      });
+      if (
+        userDataDir &&
+        error instanceof Error &&
+        error.message.includes('The browser is already running')
+      ) {
+        throw new Error(
+          `The browser is already running for ${userDataDir}. Use --isolated to run multiple browser instances.`,
+          {
+            cause: error,
+          },
+        );
+      }
+      if (error instanceof Error) {
+        const rootError = BrowserManager.rootSandboxLaunchError(error, args);
+        if (rootError) {
+          throw rootError;
+        }
+      }
+      throw error;
+    }
+  }
+
+  async #connect(): Promise<Browser> {
+    const {
+      browserUrl: browserURL,
+      wsEndpoint,
+      wsHeaders,
+      autoConnect: isAutoConnect,
+      userDataDir,
+      blockedUrlPattern: blocklist,
+      allowedUrlPattern: allowlist,
+    } = this.#serverArgs;
+    // Important: only pass channel, if autoConnect is true.
+    const channel = isAutoConnect ? this.#serverArgs.channel : undefined;
+
+    const connectOptions: Parameters<typeof puppeteer.connect>[0] = {
+      targetFilter: BrowserManager.makeTargetFilter(),
+      defaultViewport: null,
+      handleDevToolsAsPage: true,
+      protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
+      blocklist,
+      allowlist,
+      logger: puppeteerLogger,
+    };
+
+    let autoConnect = false;
+    if (wsEndpoint) {
+      connectOptions.browserWSEndpoint = wsEndpoint;
+      if (wsHeaders) {
+        connectOptions.headers = wsHeaders;
+      }
+    } else if (browserURL) {
+      connectOptions.browserURL = browserURL;
+    } else if (channel || userDataDir) {
+      // Puppeteer's `channel` connect option only knows Chrome's install
+      // locations, so Brave's DevToolsActivePort file is read directly.
+      const activeUserDataDirectory =
+        userDataDir ?? resolveBraveUserDataDirectory(channel);
+      autoConnect = true;
+      const portPath = path.join(activeUserDataDirectory, 'DevToolsActivePort');
+      try {
+        const fileContent = await fs.promises.readFile(portPath, 'utf8');
+        const [rawPort, rawPath] = fileContent
+          .split('\n')
+          .map(line => {
+            return line.trim();
+          })
+          .filter(line => {
+            return !!line;
+          });
+        if (!rawPort || !rawPath) {
+          throw new Error(`Invalid DevToolsActivePort '${fileContent}' found`);
+        }
+        const port = parseInt(rawPort, 10);
+        if (isNaN(port) || port <= 0 || port > 65535) {
+          throw new Error(`Invalid port '${rawPort}' found`);
+        }
+        const browserWSEndpoint = `ws://127.0.0.1:${port}${rawPath}`;
+        connectOptions.browserWSEndpoint = browserWSEndpoint;
+      } catch (error) {
+        throw new Error(
+          `Could not connect to Brave in ${activeUserDataDirectory}. Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.`,
+          {
+            cause: error,
+          },
+        );
+      }
+    } else {
+      throw new Error(
+        'Either browserURL, wsEndpoint, channel or userDataDir must be provided',
+      );
+    }
+
+    logger?.('Connecting Puppeteer to ', JSON.stringify(connectOptions));
+    try {
+      const connected = await puppeteer.connect(connectOptions);
+      logger?.('Connected Puppeteer');
+      this.#browserMode = 'connected';
+      this.#browser = connected;
+      connected.once('disconnected', () => this.#evictIfCurrent(connected));
+      return connected;
+    } catch (err) {
+      throw new Error(
+        `Could not connect to Brave. ${autoConnect ? `Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.` : `Check if Brave is running.`}`,
+        {
+          cause: err,
+        },
+      );
+    }
+  }
+
+  /**
+   * Clears the cached browser handle if it still matches `candidate`, so the
+   * next ensureBrowser() call establishes a fresh connection instead of
+   * reusing a handle that looks connected but is actually dead (e.g. its CDP
+   * transport died without ever emitting a `close`/`disconnected` event — as
+   * happens when an adb port-forward is torn down mid-call rather than
+   * closed cleanly).
+   *
+   * Also actively tears `candidate` down in the background: closes it if it
+   * was launched (so the Brave subprocess doesn't leak), or disconnects if
+   * it was only connected to (so the transport and its listeners don't
+   * leak). This also settles any CDP call still pending against it —
+   * Puppeteer's connection disposal synchronously rejects in-flight
+   * callbacks — instead of leaving a hung call to leak forever.
+   */
+  forget(candidate: Browser): void {
+    if (this.#browser !== candidate) {
+      return;
+    }
+    const mode = this.#browserMode;
+    this.#browser = undefined;
+    this.#browserMode = undefined;
+    if (mode === 'launched') {
+      void this.#closeLaunchedBrowser(candidate);
+    } else {
+      void candidate.disconnect().catch(err => {
+        logger?.('Failed to disconnect forgotten browser', err);
+      });
+    }
+  }
+
+  /**
+   * Handles a `disconnected` event fired by a browser we hold: clears the
+   * cached handle if it's still the current one, so the next ensureBrowser()
+   * call reconnects proactively rather than only discovering the staleness
+   * lazily on the next call's `!this.#browser?.connected` check. No teardown
+   * here — the browser is already disconnected/closed, that's why this
+   * fired — so this shares forget()'s identity guard without its cleanup,
+   * making a `disconnected` that fires late on an already-superseded browser
+   * a safe no-op.
+   */
+  #evictIfCurrent(candidate: Browser): void {
+    if (this.#browser !== candidate) {
+      return;
+    }
+    this.#browser = undefined;
+    this.#browserMode = undefined;
+  }
+
+  async #closeLaunchedBrowser(browser: Browser): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        browser.close(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Timed out closing browser')),
+            5_000,
+          );
+          timer.unref?.();
+        }),
+      ]);
+    } catch (err) {
+      logger?.('Failed to close browser', err);
+      browser.process()?.kill('SIGKILL');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async #closeBrowser(): Promise<void> {
+    const browser = this.#browser;
+    const mode = this.#browserMode;
+    this.#browser = undefined;
+    this.#browserMode = undefined;
+    if (!browser || !browser.connected) {
+      return;
+    }
+    if (mode === 'launched') {
+      await this.#closeLaunchedBrowser(browser);
+      return;
+    }
+    await browser.disconnect().catch(err => {
+      logger?.('Failed to disconnect from browser', err);
+    });
+  }
+
+  /**
+   * Shutdown hook for the active browser. Closes a launched browser (so the
+   * Brave subprocess is reaped) or disconnects from an attached browser (so
+   * the user's Brave instance stays alive). No-op if no browser is active or
+   * the connection has already been dropped.
+   */
+  async close(): Promise<void> {
+    this.#initPromise = undefined;
+    this.#closingCount++;
+    using _guard = await this.#mutex.acquire();
+    try {
+      await this.#closeBrowser();
+    } finally {
+      this.#closingCount--;
+    }
+  }
+
+  [Symbol.dispose](): void {
+    this.close().catch(err => {
+      logger?.('Failed to dispose BrowserManager', err);
+    });
+  }
+
+  async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
+  }
+}

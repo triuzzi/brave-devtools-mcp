@@ -10,8 +10,8 @@ export interface CategoryOption {
   type: 'boolean';
   describe: string;
   default?: boolean;
+  defaultDescription?: string;
   hidden?: boolean;
-  conflicts?: string[];
 }
 
 export type CategoryFlagName<T extends ToolCategory = ToolCategory> =
@@ -26,21 +26,14 @@ const categoryOverrides: Record<
   {
     describe?: string;
     hidden?: boolean;
-    conflicts?: string[];
     offByDefault?: boolean;
   }
 > = {
   [ToolCategory.INPUT]: {},
   [ToolCategory.NAVIGATION]: {},
-  [ToolCategory.EMULATION]: {
-    hidden: false,
-  },
-  [ToolCategory.PERFORMANCE]: {
-    hidden: false,
-  },
-  [ToolCategory.NETWORK]: {
-    hidden: false,
-  },
+  [ToolCategory.EMULATION]: {},
+  [ToolCategory.PERFORMANCE]: {},
+  [ToolCategory.NETWORK]: {},
   [ToolCategory.DEBUGGING]: {},
   [ToolCategory.MEMORY]: {},
   [ToolCategory.WEBMCP]: {
@@ -51,20 +44,16 @@ const categoryOverrides: Record<
   [ToolCategory.EXTENSIONS]: {
     describe:
       'Set to true to include tools related to extensions. This feature is only supported with a pipe connection; autoConnect, browserUrl, and wsEndpoint are not supported.',
-    hidden: false,
     offByDefault: true,
   },
   [ToolCategory.THIRD_PARTY]: {
     describe:
       'Set to true to enable third-party developer tools exposed by the inspected page itself',
-    hidden: false,
     offByDefault: true,
   },
   [ToolCategory.PWA]: {
     describe:
       'Set to true to include tools for automating Progressive Web Apps (install, launch, uninstall, and OS state). This feature is only supported with a pipe connection; autoConnect, browserUrl, and wsEndpoint are not supported.',
-    conflicts: ['autoConnect', 'browserUrl', 'wsEndpoint'],
-    hidden: false,
     offByDefault: true,
   },
 };
@@ -78,8 +67,10 @@ function createOption(category: ToolCategory): CategoryOption {
   return {
     type: 'boolean',
     describe,
-    hidden: true,
     ...overrides,
+    // Off-by-default categories have no default so that they stay unset unless
+    // passed explicitly. This keeps them out of conflict checks and lets
+    // --viaCli apply its own categoryExtensions default.
     ...(overrides.offByDefault ? {} : {default: true}),
   };
 }

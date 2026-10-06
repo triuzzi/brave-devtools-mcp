@@ -19,16 +19,12 @@ amp mcp add brave-devtools -- npx brave-mcp@latest
 
 To use the Brave DevTools MCP server follow the instructions from <a href="https://antigravity.google/docs/mcp">Antigravity's docs</a> to install a custom MCP server. Add the following config to the MCP servers config:
 
-```bash
+```json
 {
   "mcpServers": {
     "brave-devtools": {
       "command": "npx",
-      "args": [
-        "-y",
-        "brave-mcp@latest",
-        "--browser-url=http://127.0.0.1:9222"
-      ]
+      "args": ["-y", "brave-mcp@latest", "--browser-url=http://127.0.0.1:9222"]
     }
   }
 }
@@ -37,6 +33,8 @@ To use the Brave DevTools MCP server follow the instructions from <a href="https
 This will make the Brave DevTools MCP server automatically connect to the browser that Antigravity is using. If you are not using port 9222, make sure to adjust accordingly.
 
 Brave DevTools MCP will not start the browser instance automatically using this approach because the Brave DevTools MCP server connects to Antigravity's built-in browser. If the browser is not already running, you have to start it first by clicking the Chrome icon at the top right corner.
+
+If you are using the Antigravity extension in VS Code (instead of standalone Antigravity IDE), configure the server in Antigravity's MCP configuration (`mcp_config.json`) rather than VS Code's Copilot settings. If you do not have a browser running with remote debugging on port 9222, omit `--browser-url` to let Brave DevTools MCP launch Brave automatically.
 
 </details>
 
@@ -238,6 +236,22 @@ Use the Factory CLI to add the Brave DevTools MCP server (<a href="https://docs.
 ```bash
 droid mcp add brave-devtools "npx -y brave-mcp@latest"
 ```
+
+</details>
+
+<details>
+  <summary>FLUJO</summary>
+
+To connect [FLUJO](https://flujo.com.co/) to an existing Brave instance, first
+[start Brave with remote debugging enabled](./advanced-usage.md#manual-connection-using-port-forwarding).
+Use the debugging port from that setup in the argument below.
+
+1. With Node.js installed, run `npm install brave-mcp@latest` in a local directory.
+2. In FLUJO, open **Connected Apps > Connect App > I'm an expert > Configure & Test**.
+3. Set **Server name** to `brave-devtools` and **MCP server root path** to the directory containing the installed package.
+4. Select **Standard IO** and set **Run command** to `npx`. Use **Add argument** to enter `-y`, `brave-mcp@latest`, and `--browser-url=http://127.0.0.1:9222` as separate arguments, adjusting the port if needed.
+5. Click **3) Test run**. After the MCP handshake succeeds, click **Add server**.
+6. Open the saved server's **Tools** tab. Use **Test tool** to call `new_page` with the URL you want to debug, then call `take_snapshot` with the returned page ID to verify browser access.
 
 </details>
 

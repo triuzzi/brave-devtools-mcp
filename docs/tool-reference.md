@@ -40,8 +40,9 @@
   - [`take_snapshot`](#take_snapshot)
   - [`screencast_start`](#screencast_start)
   - [`screencast_stop`](#screencast_stop)
-- **[Memory](#memory)** (13 tools)
+- **[Memory](#memory)** (14 tools)
   - [`take_heapsnapshot`](#take_heapsnapshot)
+  - [`analyze_heapsnapshot_contexts`](#analyze_heapsnapshot_contexts)
   - [`close_heapsnapshot`](#close_heapsnapshot)
   - [`compare_heapsnapshots`](#compare_heapsnapshots)
   - [`get_heapsnapshot_class_nodes`](#get_heapsnapshot_class_nodes)
@@ -374,18 +375,20 @@
 
 ### `evaluate_script`
 
-**Description:** Evaluate a JavaScript function inside the target page. Returns the response as JSON, so returned values have to be JSON-serializable.
+**Description:** Evaluate JavaScript inside the target page. The source can be provided inline or loaded from a local file. Returns the response as JSON, so returned values have to be JSON-serializable.
 
 **Parameters:**
-
-- **function** (string) **(required)**: A JavaScript function declaration to be executed by the tool in the target page.
-  Example without arguments: `() => document.title` or `async () => await fetch("example.com")`.
-  Example with arguments: `(el) => el.innerText`
 
 - **pageId** (number) **(required)**: Targets a specific page by ID.
 - **args** (array) _(optional)_: An optional list of arguments to pass to the function.
 - **dialogAction** (string) _(optional)_: Handle dialogs while execution. "accept", "dismiss", or string for response of window.prompt. Defaults to accept.
 - **filePath** (string) _(optional)_: The absolute or relative path to a file to save the script output to. If omitted, the output is returned inline.
+- **format** (enum: "function", "script") _(optional)_: How to interpret the source. "function" treats it as a function declaration and supports args. "script" evaluates it as classic JavaScript and does not support args. Defaults to "function". ECMAScript modules are not supported.
+- **function** (string) _(optional)_: JavaScript source to execute in the target page. Provide either this or sourcePath, but not both. The source is interpreted according to format.
+  Example without arguments: `() => document.title` or `async () => await fetch("example.com")`.
+  Example with arguments: `(el) => el.innerText`
+
+- **sourcePath** (string) _(optional)_: The absolute or relative path to a JavaScript file on the MCP server's local filesystem. Provide either this or function, but not both.
 - **waitForStableDom** (boolean) _(optional)_: Whether to wait for the DOM to settle. Pass false if the script only reads data. Defaults to true.
 
 ---
@@ -403,15 +406,17 @@
 
 ### `get_css_styles`
 
-**Description:** Retrieve matched CSS rules, inline styles, inherited styles, and cascade information for an element identified by its UID.
-Use this tool to debug why specific CSS properties are applied, overridden, or conflicting. Supports pagination for elements with many matched rules. Requires a UID from [`take_snapshot`](#take_snapshot).
+**Description:** Retrieve matched CSS rules, inline styles (element.style), inherited styles, custom properties, and cascade wrappers (@layer, @media, @container, @scope) for an element identified by its UID.
+Rules are ordered from highest to lowest cascade precedence and include source line numbers (e.g. index:196). Active (winning) declarations have no prefix tag, while (losing) overridden declarations are prefixed with [overloaded].
+Treat the output as authoritative and complete.
+Results are paginated (10 rules per page by default); use pageIdx to page through the remaining rules. Requires a UID from [`take_snapshot`](#take_snapshot).
 
 **Parameters:**
 
 - **pageId** (number) **(required)**: Targets a specific page by ID.
 - **uid** (string) **(required)**: The uid of the element on the page from the page content snapshot to inspect CSS styles for
-- **pageIdx** (integer) _(optional)_: Page number to return (0-based). When omitted, returns the first page.
-- **pageSize** (integer) _(optional)_: Maximum number of CSS rules to return per page. When omitted, returns all rules.
+- **pageIdx** (integer) _(optional)_: Page number to return (0-based). Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: Maximum number of CSS rules to return per page. Defaults to 10.
 
 ---
 
@@ -504,6 +509,20 @@ in the DevTools Elements panel (if any).
 
 - **filePath** (string) **(required)**: A path to a .heapsnapshot file to save the heapsnapshot to.
 - **pageId** (number) **(required)**: Targets a specific page by ID.
+
+---
+
+### `analyze_heapsnapshot_contexts`
+
+**Description:** Loads a memory heapsnapshot to identify and rank closure contexts holding dead captured fields—variables no remaining live closure can read. Scopes are ranked globally by the retained size of these dead values to provide a prioritizing heuristic, rather than an exact measure of reclaimable bytes. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0.
+- **pageSize** (integer) _(optional)_: The number of contexts to return per page. Defaults to 20.
+- **retainedSize** (string) _(optional)_: Inclusive range for the dead-field score of a context (e.g. "10KB", "1MB-2MB", "-1MB", or "1MB-"). A single value is treated as a minimum.
+- **scopeInfoNodeId** (integer) _(optional)_: Only return contexts declared by the scope with this ScopeInfo node id, as reported in the scope header of a previous call.
 
 ---
 

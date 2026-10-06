@@ -43,21 +43,6 @@ describe('CommentFormatter', () => {
       text: 'Fix the color contrast here',
       elementUid: 'element-uid-42',
       reqid: 7,
-      editor: {
-        filePath: 'src/style.css',
-        lineNumber: 10,
-      },
-    };
-    return new CommentFormatter([thread]);
-  });
-
-  formatterTest('formats editor location when filePath is missing', () => {
-    const thread: StructuredCommentThread = {
-      id: 'comment-2',
-      text: 'Review this script line',
-      editor: {
-        lineNumber: 25,
-      },
     };
     return new CommentFormatter([thread]);
   });
@@ -75,12 +60,11 @@ describe('CommentFormatter', () => {
     const rawThread: CD4ACommentThread = {
       id: 'comment-1',
       text: 'Fix the color contrast here',
-      backendNodeId: 42,
-      networkRequestId: 'req-99',
-      editor: {
-        filePath: 'src/style.css',
-        lineNumber: 10,
+      node: {
+        backendNodeId: 42,
+        targetId: 'target-1',
       },
+      networkRequestId: 'req-99',
     };
 
     const resolveBackendNodeId = sinon.stub().resolves('element-uid-42');
@@ -103,7 +87,10 @@ describe('CommentFormatter', () => {
       const rawThread: CD4ACommentThread = {
         id: 'comment-2',
         text: 'Fix heading font size',
-        backendNodeId: 42,
+        node: {
+          backendNodeId: 42,
+          targetId: 'target-1',
+        },
         networkRequestId: 'req-99',
       };
 

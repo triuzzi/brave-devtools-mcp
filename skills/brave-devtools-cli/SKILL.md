@@ -134,9 +134,10 @@ brave-devtools list_network_requests 1 --includePreservedRequests true # Include
 ```bash
 brave-devtools evaluate_script "() => document.title" --pageId 1 # Evaluate a JavaScript function on page 1
 brave-devtools evaluate_script "(a) => a.innerText" --pageId 1 --args 1_4 # Evaluate JS with UID arguments on page 1
+brave-devtools evaluate_script --pageId 1 --sourcePath /path/to/script.js --format script # Evaluate a local classic JavaScript file on page 1
 brave-devtools get_console_message 1 1 # Gets a console message by its ID
-brave-devtools get_css_styles 1 "1_4" # Retrieves resolved CSS styles (inline, matched, inherited, pseudo) for an element on page 1
-brave-devtools get_css_styles 1 "1_4" --pageSize 20 --pageIdx 0 # Get CSS styles with pagination on page 1
+brave-devtools get_css_styles 1 "1_4" # Get CSS styles with pagination on page 1 (default: 10 rules, pageIdx 0)
+brave-devtools get_css_styles 1 "1_4" --pageSize 20 --pageIdx 1 # Paginate CSS rules with custom page size and custom 0-based page index
 brave-devtools lighthouse_audit 1 --mode "navigation" # Run Lighthouse audit for navigation
 brave-devtools lighthouse_audit 1 --mode "snapshot" --device "mobile" # Run Lighthouse audit for a snapshot on mobile
 brave-devtools lighthouse_audit 1 --outputDirPath ./out # Run Lighthouse audit and save reports

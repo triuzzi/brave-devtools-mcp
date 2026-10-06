@@ -42,7 +42,15 @@ interface PageEvents extends PuppeteerPageEvents {
 }
 
 export type ListenerMap<EventMap extends PageEvents = PageEvents> = {
-  [K in keyof EventMap]?: (event: EventMap[K]) => void;
+  [
+    K in keyof EventMap as string extends K
+      ? never
+      : number extends K
+        ? never
+        : symbol extends K
+          ? never
+          : K
+  ]?: (event: EventMap[K]) => void;
 };
 
 export class PageCollector<T> {
@@ -196,6 +204,8 @@ export class PageCollector<T> {
 export class ConsoleCollector extends PageCollector<
   ConsoleMessage | Error | DevTools.AggregatedIssue | UncaughtError
 > {
+  static readonly MAX_MESSAGES_PER_NAVIGATION = 10_000;
+
   #subscriber?: PageEventSubscriber;
 
   constructor(
@@ -205,8 +215,9 @@ export class ConsoleCollector extends PageCollector<
         item: ConsoleMessage | Error | DevTools.AggregatedIssue | UncaughtError,
       ) => void,
     ) => ListenerMap<PageEvents>,
+    maxMessagesPerNavigation = ConsoleCollector.MAX_MESSAGES_PER_NAVIGATION,
   ) {
-    super(page, listeners);
+    super(page, listeners, maxMessagesPerNavigation);
     this.#subscriber = new PageEventSubscriber(this.pptrPage);
     this.#subscriber.subscribe();
   }

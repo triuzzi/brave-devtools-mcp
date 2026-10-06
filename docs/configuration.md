@@ -4,6 +4,16 @@ The Brave DevTools MCP server supports the following configuration option:
 
 <!-- BEGIN AUTO GENERATED OPTIONS -->
 
+- **`--categoryInput`/ `--category-input`**
+  Set to false to exclude tools related to input.
+  - **Type:** boolean
+  - **Default:** `true`
+
+- **`--categoryNavigation`/ `--category-navigation`**
+  Set to false to exclude tools related to navigation.
+  - **Type:** boolean
+  - **Default:** `true`
+
 - **`--categoryEmulation`/ `--category-emulation`**
   Set to false to exclude tools related to emulation.
   - **Type:** boolean
@@ -19,6 +29,11 @@ The Brave DevTools MCP server supports the following configuration option:
   - **Type:** boolean
   - **Default:** `true`
 
+- **`--categoryDebugging`/ `--category-debugging`**
+  Set to false to exclude tools related to debugging.
+  - **Type:** boolean
+  - **Default:** `true`
+
 - **`--categoryExtensions`/ `--category-extensions`**
   Set to true to include tools related to extensions. This feature is only supported with a pipe connection; autoConnect, browserUrl, and wsEndpoint are not supported.
   - **Type:** boolean
@@ -26,6 +41,16 @@ The Brave DevTools MCP server supports the following configuration option:
 
 - **`--categoryExperimentalThirdParty`/ `--category-experimental-third-party`**
   Set to true to enable third-party developer tools exposed by the inspected page itself
+  - **Type:** boolean
+  - **Default:** `false`
+
+- **`--categoryMemory`/ `--category-memory`**
+  Set to false to exclude tools related to memory.
+  - **Type:** boolean
+  - **Default:** `true`
+
+- **`--categoryExperimentalWebmcp`/ `--category-experimental-webmcp`**
+  Set to true to enable debugging WebMCP tools. Requires a recent Brave version with the following flags: `--enable-features=WebMCP,DevToolsWebMCPSupport`
   - **Type:** boolean
   - **Default:** `false`
 
@@ -42,17 +67,14 @@ The Brave DevTools MCP server supports the following configuration option:
 - **`--browserUrl`/ `--browser-url`, `-u`**
   Connect to a running, debuggable Brave instance (e.g. `http://127.0.0.1:9222`). For more details see: https://github.com/triuzzi/brave-devtools-mcp/blob/main/docs/advanced-usage.md#connecting-to-a-running-brave-instance.
   - **Type:** string
-  - **Default:** `false`
 
 - **`--wsEndpoint`/ `--ws-endpoint`, `-w`**
   WebSocket endpoint to connect to a running Brave instance (e.g., ws://127.0.0.1:9222/devtools/browser/<id>). Alternative to --browserUrl.
   - **Type:** string
-  - **Default:** `false`
 
 - **`--wsHeaders`/ `--ws-headers`**
   Custom headers for WebSocket connection in JSON format (e.g., '{"Authorization":"Bearer token"}'). Only works with --wsEndpoint.
   - **Type:** string
-  - **Default:** `false`
 
 - **`--headless`**
   Whether to run in headless (no UI) mode.
@@ -62,7 +84,6 @@ The Brave DevTools MCP server supports the following configuration option:
 - **`--executablePath`/ `--executable-path`, `-e`**
   Path to a custom Brave executable. Can also be set via BRAVE_PATH.
   - **Type:** string
-  - **Default:** `false`
 
 - **`--isolated`**
   If specified, creates a temporary user-data-dir that is automatically cleaned up after the browser is closed. Defaults to false.
@@ -72,43 +93,63 @@ The Brave DevTools MCP server supports the following configuration option:
 - **`--userDataDir`/ `--user-data-dir`**
   Path to the user data directory for Brave. Default is $HOME/.cache/brave-devtools-mcp/brave-profile$CHANNEL_SUFFIX_IF_NON_RELEASE
   - **Type:** string
-  - **Default:** `false`
 
 - **`--channel`**
   Specify a different Brave channel. The default is the release channel.
   - **Type:** string
   - **Choices:** `release`, `beta`, `nightly`
-  - **Default:** `false`
+  - **Default:** `release`
 
 - **`--proxyServer`/ `--proxy-server`**
   Proxy server configuration for Brave passed as --proxy-server when launching the browser. See https://www.chromium.org/developers/design-documents/network-settings/ for details.
   - **Type:** string
-  - **Default:** `false`
 
 - **`--braveArg`/ `--brave-arg`**
   Additional arguments for Brave. Only applies when Brave is launched by brave-devtools-mcp.
   - **Type:** array
-  - **Default:** `false`
 
 - **`--ignoreDefaultBraveArg`/ `--ignore-default-brave-arg`**
   Explicitly disable default arguments for Brave. Only applies when Brave is launched by brave-devtools-mcp.
   - **Type:** array
-  - **Default:** `false`
-
-- **`--logFile`/ `--log-file`**
-  Path to a file to write debug logs to. Set the env variable `DEBUG` to `*` to enable verbose logs. Useful for submitting bug reports.
-  - **Type:** string
-  - **Default:** `false`
 
 - **`--viewport`**
   Initial viewport size for Brave instances started by the server. For example, `1280x720`. In headless mode, max size is 3840x2160px.
   - **Type:** string
-  - **Default:** `false`
 
 - **`--acceptInsecureCerts`/ `--accept-insecure-certs`**
   If enabled, ignores errors relative to self-signed and expired certificates. Use with caution.
   - **Type:** boolean
   - **Default:** `false`
+
+- **`--blockedUrlPattern`/ `--blocked-url-pattern`**
+  Restricts browser's network access by blocking specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Silently detaches from targets with blocked URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns. A pattern that uses a regexp group or a named group (`:name`) in any component (for example `(127\.\d+\.\d+\.\d+)` in the hostname or `*://127.0.0.1::port/*`) is rejected, because it is not enforced on redirects or subresources; use an exact value or a `*` wildcard instead.
+  - **Type:** array
+
+- **`--allowedUrlPattern`/ `--allowed-url-pattern`**
+  Restricts browser's network access by allowing only specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Requires a recent Brave version. Silently detaches from targets with unallowed URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns. A pattern that uses a regexp group or a named group (`:name`) in any component (for example `(127\.\d+\.\d+\.\d+)` in the hostname or `*://127.0.0.1::port/*`) is rejected, because it is not enforced on redirects or subresources; use an exact value or a `*` wildcard instead.
+  - **Type:** array
+
+- **`--screenshotFormat`/ `--screenshot-format`**
+  Override the default output format used by take_screenshot when the caller does not specify one. JPEG and WebP are ~3-5x smaller than PNG, which reduces transfer and storage size. To reduce context size use --screenshotMaxWidth / --screenshotMaxHeight, since image tokens scale with dimensions rather than encoded bytes. Unset preserves the existing default ("png").
+  - **Type:** string
+  - **Choices:** `jpeg`, `png`, `webp`
+  - **Default:** `png`
+
+- **`--screenshotQuality`/ `--screenshot-quality`**
+  Override the default compression quality (0-100) used by take_screenshot for JPEG and WebP when the caller does not specify one. Lower values mean smaller files. Ignored for PNG. Unset preserves the Puppeteer default.
+  - **Type:** number
+
+- **`--screenshotMaxWidth`/ `--screenshot-max-width`**
+  Maximum width in pixels for screenshots. If the captured image is wider, it is downscaled (preserving aspect ratio) before being returned. Reduces context size in AI conversations. Unset means no resize.
+  - **Type:** number
+
+- **`--screenshotMaxHeight`/ `--screenshot-max-height`**
+  Maximum height in pixels for screenshots. If the captured image is taller, it is downscaled (preserving aspect ratio) before being returned. Can be combined with --screenshot-max-width; the smaller scale factor wins. Unset means no resize.
+  - **Type:** number
+
+- **`--logFile`/ `--log-file`**
+  Path to a file to write debug logs to. Set the env variable `NODE_DEBUG` to `*` to enable verbose logs. Useful for submitting bug reports.
+  - **Type:** string
 
 - **`--pageIdRouting`/ `--page-id-routing`**
   Require pageId on page-scoped tools and route requests by page ID (useful for concurrent agent sessions). Use --no-page-id-routing to disable.
@@ -148,22 +189,10 @@ The Brave DevTools MCP server supports the following configuration option:
 - **`--experimentalFfmpegPath`/ `--experimental-ffmpeg-path`**
   Path to ffmpeg executable for screencast recording.
   - **Type:** string
-  - **Default:** `false`
 
 - **`--experimentalScreencastFps`/ `--experimental-screencast-fps`**
   Frames per second to use for screencast recording. Lower values can reduce memory pressure on pages that produce frames faster than ffmpeg can encode them.
   - **Type:** number
-  - **Default:** `false`
-
-- **`--blockedUrlPattern`/ `--blocked-url-pattern`**
-  Restricts browser's network access by blocking specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Silently detaches from targets with blocked URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns.
-  - **Type:** array
-  - **Default:** `false`
-
-- **`--allowedUrlPattern`/ `--allowed-url-pattern`**
-  Restricts browser's network access by allowing only specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Requires a recent Brave version. Silently detaches from targets with unallowed URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns.
-  - **Type:** array
-  - **Default:** `false`
 
 - **`--performanceCrux`/ `--performance-crux`**
   Set to false to disable sending URLs from performance traces to CrUX API to get field performance data.
@@ -180,31 +209,15 @@ The Brave DevTools MCP server supports the following configuration option:
   - **Type:** boolean
   - **Default:** `true`
 
+- **`--fileNavigations`/ `--file-navigations`**
+  Set to false to disallow navigating to file: URLs. When disabled, new_page, navigate_page and the slim navigate tool reject file: URLs, including view-source: URLs that target them. This restricts navigations the server performs. It is not a filesystem sandbox: it does not affect pages the browser already had open when the server connected, and the browser can reach the filesystem by other means. Use OS sandboxing for full filesystem confinement.
+  - **Type:** boolean
+  - **Default:** `true`
+
 - **`--sourceMaps`/ `--source-maps`**
   Whether to enable source maps in DevTools. Use --no-source-maps to disable.
   - **Type:** boolean
   - **Default:** `true`
-
-- **`--screenshotFormat`/ `--screenshot-format`**
-  Override the default output format used by take_screenshot when the caller does not specify one. JPEG and WebP are ~3-5x smaller than PNG, which reduces transfer and storage size. To reduce context size use --screenshotMaxWidth / --screenshotMaxHeight, since image tokens scale with dimensions rather than encoded bytes. Unset preserves the existing default ("png").
-  - **Type:** string
-  - **Choices:** `jpeg`, `png`, `webp`
-  - **Default:** `false`
-
-- **`--screenshotQuality`/ `--screenshot-quality`**
-  Override the default compression quality (0-100) used by take_screenshot for JPEG and WebP when the caller does not specify one. Lower values mean smaller files. Ignored for PNG. Unset preserves the Puppeteer default.
-  - **Type:** number
-  - **Default:** `false`
-
-- **`--screenshotMaxWidth`/ `--screenshot-max-width`**
-  Maximum width in pixels for screenshots. If the captured image is wider, it is downscaled (preserving aspect ratio) before being returned. Reduces context size in AI conversations. Unset means no resize.
-  - **Type:** number
-  - **Default:** `false`
-
-- **`--screenshotMaxHeight`/ `--screenshot-max-height`**
-  Maximum height in pixels for screenshots. If the captured image is taller, it is downscaled (preserving aspect ratio) before being returned. Can be combined with --screenshot-max-width; the smaller scale factor wins. Unset means no resize.
-  - **Type:** number
-  - **Default:** `false`
 
 - **`--slim`**
   Exposes a "slim" set of 3 tools covering navigation, script execution and screenshots only. Useful for basic browser tasks.
@@ -229,7 +242,6 @@ The Brave DevTools MCP server supports the following configuration option:
 - **`--config`**
   Path to JSON configuration file.
   - **Type:** string
-  - **Default:** `false`
 
 <!-- END AUTO GENERATED OPTIONS -->
 
@@ -250,6 +262,40 @@ Pass them via the `args` property in the JSON configuration. For example:
   }
 }
 ```
+
+## Configuration file
+
+Instead of passing flags, you can put the options in a JSON file. Keys use the
+camelCase option names:
+
+```json
+{
+  "headless": true,
+  "channel": "nightly",
+  "memoryDebugging": true,
+  "blockedUrlPattern": ["*://*.example.com/*"]
+}
+```
+
+The server uses the first config file it finds in the following locations,
+from highest to lowest priority. Config files are not merged.
+
+1. The path passed via `--config`.
+2. `bd4a.config.json` in the current working directory.
+3. `bd4a.config.json` in the `$PLUGIN_DATA` directory, when running as an
+   [agent plugin](https://agent-plugins.org/specification).
+4. The global config file:
+   - macOS and Linux: `$XDG_CONFIG_HOME/bd4a/config.json`, falling back to
+     `~/.config/bd4a/config.json`.
+   - Windows: `%LOCALAPPDATA%/bd4a/config.json`, falling back to
+     `~/.config/bd4a/config.json`.
+
+Flags passed on the command line take precedence over the values in the config
+file.
+
+Set the `BRAVE_DEVTOOLS_MCP_NO_CONFIG_DISCOVERY` env variable to turn off the
+search for config files, for example in tests. A config file passed via
+`--config` is still used.
 
 ## Connecting via WebSocket with custom headers
 

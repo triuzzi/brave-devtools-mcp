@@ -5,18 +5,25 @@
  */
 
 import assert from 'node:assert';
-import {describe, it} from 'node:test';
+import {afterEach, describe, it} from 'node:test';
+
+import sinon from 'sinon';
 
 import type {McpPage} from '../../src/McpPage.js';
 import {listPages, navigatePage, selectPage} from '../../src/tools/pages.js';
 import {executeWebMcpTool} from '../../src/tools/webmcp.js';
+import {createHandlerMocks} from '../mocks.js';
 import {html, withMcpContext} from '../utils.js';
 
 describe('webmcp', () => {
+  afterEach(() => {
+    sinon.restore();
+  });
+
   describe('list_webmcp_tools', () => {
     it('list webmcp tools in navigate_page response', async () => {
-      await withMcpContext(async (response, context) => {
-        await navigatePage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await navigatePage(args).handler(
           {
             params: {url: 'data:text/html,<html></html>'},
             page: context.getSelectedMcpPage(),
@@ -29,16 +36,16 @@ describe('webmcp', () => {
     });
 
     it('list webmcp tools in list_pages response', async () => {
-      await withMcpContext(async (response, context) => {
-        await listPages().handler({params: {}}, response, context);
+      await withMcpContext(async (response, context, args) => {
+        await listPages(args).handler({params: {}}, response, context);
         assert.ok(response.listWebMcpTools);
       });
     });
 
     it('list webmcp tools in select_page response', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const pageId = context.getSelectedMcpPage().id ?? 1;
-        await selectPage.handler({params: {pageId}}, response, context);
+        await selectPage(args).handler({params: {pageId}}, response, context);
         assert.ok(response.listWebMcpTools);
       });
     });
@@ -63,7 +70,7 @@ describe('webmcp', () => {
 
     it('executes a tool successfully', async () => {
       await withMcpContext(
-        async (response, context) => {
+        async (response, context, args) => {
           const page = context.getSelectedMcpPage();
           const toolsAddedPromise = new Promise(resolve => {
             page.pptrPage.webmcp.once('toolsadded', resolve);
@@ -73,7 +80,7 @@ describe('webmcp', () => {
           // Wait for WebMCP tools to be registered and detected by Puppeteer
           await toolsAddedPromise;
 
-          await executeWebMcpTool.handler(
+          await executeWebMcpTool(args).handler(
             {params: {toolName: 'test_tool', input: JSON.stringify({})}, page},
             response,
             context,
@@ -90,10 +97,10 @@ describe('webmcp', () => {
 
     it('throws if tool is not found', async () => {
       await withMcpContext(
-        async (response, context) => {
+        async (response, context, args) => {
           await assert.rejects(
             async () => {
-              await executeWebMcpTool.handler(
+              await executeWebMcpTool(args).handler(
                 {
                   params: {toolName: 'missing-tool', input: JSON.stringify({})},
                   page: context.getSelectedMcpPage(),
@@ -110,15 +117,30 @@ describe('webmcp', () => {
       );
     });
 
+    it('rejects JSON array input', async () => {
+      const {page, context, response, args} = createHandlerMocks();
+      await assert.rejects(
+        executeWebMcpTool(args).handler(
+          {
+            params: {toolName: 'test_tool', input: '[]'},
+            page,
+          },
+          response,
+          context,
+        ),
+        {message: /Parsed input is not an object/},
+      );
+    });
+
     it('throws if input is invalid', async () => {
       await withMcpContext(
-        async (response, context) => {
+        async (response, context, args) => {
           await assert.rejects(
             async () => {
               const page = context.getSelectedMcpPage();
               await setupWebMcpTool(page);
 
-              await executeWebMcpTool.handler(
+              await executeWebMcpTool(args).handler(
                 {params: {toolName: 'test_tool', input: 'invalid'}, page},
                 response,
                 context,

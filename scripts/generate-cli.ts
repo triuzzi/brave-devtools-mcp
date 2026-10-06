@@ -7,59 +7,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import {Client} from '@modelcontextprotocol/sdk/client/index.js';
-import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
-
-import {mcpOptions, parseArguments} from '../build/src/config/mcp-options.js';
 import {
   isCategoryOffByDefault,
   categoryToFlagName,
 } from '../build/src/config/category-options.js';
+import {mcpOptions} from '../build/src/config/mcp-options.js';
+import {ConfigParser} from '../build/src/config/ConfigParser.js';
+import {zod} from '../build/src/third_party/index.js';
 import {labels, ToolCategory} from '../build/src/tools/categories.js';
-import {createTools} from '../build/src/tools/tools.js';
+import {isSlimTool} from '../build/src/tools/ToolDefinition.js';
+import {createTools, requiresHiddenFlag} from '../build/src/tools/tools.js';
 
 const OUTPUT_PATH = path.join(
   import.meta.dirname,
   '../src/config/cli-options.ts',
 );
-
-async function fetchTools() {
-  console.log('Connecting to brave-devtools-mcp to fetch tools...');
-  // Use the local build of the server
-  const serverPath = path.join(
-    import.meta.dirname,
-    '../build/src/bin/brave-devtools-mcp.js',
-  );
-
-  const transport = new StdioClientTransport({
-    command: 'node',
-    args: [serverPath, '--viaCli'],
-    env: {...process.env, BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
-  });
-
-  const client = new Client(
-    {
-      name: 'brave-devtools-cli-generator',
-      version: '0.1.0',
-    },
-    {
-      capabilities: {},
-    },
-  );
-
-  await client.connect(transport);
-  try {
-    const toolsResponse = await client.listTools();
-    if (!toolsResponse.tools?.length) {
-      throw new Error(`No tools were fetched`);
-    }
-    const tools = toolsResponse.tools || [];
-    console.log(`Fetched ${tools.length} tools`);
-    return tools;
-  } finally {
-    await client.close();
-  }
-}
 
 interface CliOption {
   name: string;
@@ -105,21 +67,18 @@ function schemaToCLIOptions(schema: JsonSchema): CliOption[] {
 }
 
 async function generateCli() {
-  const tools = await fetchTools();
-
-  const staticTools = createTools(parseArguments('0.0.0', [], {}));
-  const toolNameToCategoryEnum = new Map<string, string>();
-  const toolNameToConditions = new Map<string, string[]>();
-
-  for (const tool of staticTools) {
-    toolNameToCategoryEnum.set(tool.name, tool.annotations.category);
-    toolNameToConditions.set(tool.name, tool.annotations.conditions || []);
-  }
+  const tools = createTools(
+    new ConfigParser('0.0.0', ['', '', '--viaCli']).parse(),
+  );
 
   // Sort tools by name
   const sortedTools = tools
     .sort((a, b) => a.name.localeCompare(b.name))
     .filter(tool => {
+      // Skipping slim tools and tools behind internal flags.
+      if (isSlimTool(tool) || requiresHiddenFlag(tool)) {
+        return false;
+      }
       // Skipping fill_form because it is not relevant in shell scripts
       // and CLI does not handle array/JSON args well.
       if (tool.name === 'fill_form') {
@@ -135,7 +94,7 @@ async function generateCli() {
         return false;
       }
       // Skipping in_page tools as they are not launched yet
-      if (toolNameToCategoryEnum.get(tool.name) === ToolCategory.IN_PAGE) {
+      if (tool.annotations.category === ToolCategory.IN_PAGE) {
         return false;
       }
       return true;
@@ -147,13 +106,16 @@ async function generateCli() {
   > = {};
 
   for (const tool of sortedTools) {
-    const options = schemaToCLIOptions(tool.inputSchema);
+    const inputSchema = zod.toJSONSchema(zod.object(tool.schema), {
+      io: 'input',
+    }) as JsonSchema;
+    const options = schemaToCLIOptions(inputSchema);
     const args: Record<string, CliOption> = {};
     for (const opt of options) {
       args[opt.name] = opt;
     }
 
-    const categoryEnum = toolNameToCategoryEnum.get(tool.name);
+    const categoryEnum = tool.annotations.category;
     if (!categoryEnum) {
       throw new Error(`Tool ${tool.name} has no category.`);
     }
@@ -171,7 +133,7 @@ async function generateCli() {
       requiredFlags.push(`--${categoryFlag}=true`);
     }
 
-    const conditions = toolNameToConditions.get(tool.name) || [];
+    const conditions = tool.annotations.conditions || [];
     for (const condition of conditions) {
       const option = mcpOptions[condition as keyof typeof mcpOptions];
       if (!option || !('default' in option) || option.default !== true) {

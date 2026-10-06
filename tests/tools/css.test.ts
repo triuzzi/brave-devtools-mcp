@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import assert from 'node:assert';
 import {afterEach, describe, it} from 'node:test';
 
 import sinon from 'sinon';
 
-import {DevTools} from '../../src/third_party/index.js';
+import {DevTools, zod} from '../../src/third_party/index.js';
 import {getCssStyles} from '../../src/tools/css.js';
 import {createHandlerMocks} from '../mocks.js';
 
@@ -17,15 +18,26 @@ describe('get_css_styles', () => {
     sinon.restore();
   });
 
+  it('defaults pagination to the first page of 10 rules', () => {
+    const {args} = createHandlerMocks();
+
+    const params = zod
+      .object(getCssStyles(args).schema)
+      .parse({uid: 'element-1', pageId: 1});
+
+    assert.strictEqual(params.pageSize, 10);
+    assert.strictEqual(params.pageIdx, 0);
+  });
+
   it('retrieves matched styles for a uid and passes to response', async () => {
-    const {page, context, response} = createHandlerMocks();
+    const {page, context, response, args} = createHandlerMocks();
     const mockStyles = sinon.createStubInstance(
       DevTools.CSSMatchedStyles.CSSMatchedStyles,
     );
     page.getMatchedStylesForUid.resolves(mockStyles);
 
-    await getCssStyles.handler(
-      {params: {uid: 'element-1'}, page},
+    await getCssStyles(args).handler(
+      {params: {uid: 'element-1', pageSize: 10, pageIdx: 0}, page},
       response,
       context,
     );
@@ -39,20 +51,20 @@ describe('get_css_styles', () => {
       mockStyles,
       {
         uid: 'element-1',
-        pageSize: undefined,
-        pageIdx: undefined,
+        pageSize: 10,
+        pageIdx: 0,
       },
     );
   });
 
   it('passes pagination options to response', async () => {
-    const {page, context, response} = createHandlerMocks();
+    const {page, context, response, args} = createHandlerMocks();
     const mockStyles = sinon.createStubInstance(
       DevTools.CSSMatchedStyles.CSSMatchedStyles,
     );
     page.getMatchedStylesForUid.resolves(mockStyles);
 
-    await getCssStyles.handler(
+    await getCssStyles(args).handler(
       {params: {uid: 'element-1', pageSize: 10, pageIdx: 2}, page},
       response,
       context,

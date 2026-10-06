@@ -30,12 +30,11 @@ import {hideBin, yargs, type CallToolResult} from '../third_party/index.js';
 import {checkForUpdates} from '../utils/check-for-updates.js';
 import {VERSION} from '../version.js';
 
+import {buildCommand, isOptionalPositionalArg} from '../config/cli-commands.js';
 import {commands} from '../config/cli-options.js';
-import {
-  mcpOptions,
-  parseArguments,
-  getMcpOptionsForViaCli,
-} from '../config/mcp-options.js';
+import {mcpOptions, getCliOptions} from '../config/mcp-options.js';
+
+import {ConfigParser} from '../config/ConfigParser.js';
 
 await checkForUpdates(
   'Run `npm install -g brave-mcp@latest` and `brave-devtools start` to update and restart the daemon.',
@@ -43,25 +42,19 @@ await checkForUpdates(
 
 const DEFAULT_CLI_ARGS = ['--viaCli'];
 
-async function start(args: string[], sessionId: string) {
+async function start(args: string[], sessionId: string, stopExisting = false) {
   const combinedArgs = [...DEFAULT_CLI_ARGS, ...args];
+  // Validates the arguments and the config file before starting the daemon.
+  const parsedArgs = new ConfigParser(VERSION, [
+    process.execPath,
+    process.argv[1],
+    ...combinedArgs,
+  ]).parse();
+  if (stopExisting && isDaemonRunning(sessionId)) {
+    await stopDaemon(sessionId);
+  }
   await startDaemon(combinedArgs, sessionId);
-  logDisclaimers(parseArguments(VERSION, combinedArgs));
-}
-
-function getCliOptions() {
-  const options: Partial<typeof mcpOptions> = {
-    ...getMcpOptionsForViaCli(),
-  };
-
-  // Missing CLI serialization.
-  delete options.viewport;
-
-  // Change the defaults for the CLI.
-  delete options.experimentalStructuredContent;
-  delete options.experimentalInteropTools;
-
-  return options;
+  logDisclaimers(parsedArgs);
 }
 
 const y = yargs(hideBin(process.argv))
@@ -75,7 +68,7 @@ const y = yargs(hideBin(process.argv))
   .option('sessionId', {
     type: 'string',
     description: 'Session ID for daemon scoping',
-    default: '',
+    default: process.env.CD4A_INTERNAL_DAEMON_SESSION_ID || '',
     hidden: true,
     coerce: (sessionId: string) => {
       assertValidSessionId(sessionId);
@@ -106,7 +99,10 @@ const y = yargs(hideBin(process.argv))
         );
         console.error('   - CORRECT:   brave-devtools click 1 "1_2"');
         console.error(
-          '2. Optional parameters are passed as double-dash options/flags (e.g. --dblClick true).',
+          '   - CORRECT:   brave-devtools evaluate_script "() => document.title" --pageId 1',
+        );
+        console.error(
+          '2. Optional parameters are passed as double-dash options/flags (e.g. --dblClick true), except optional positional parameters shown in command help.',
         );
         console.error(
           '3. Make sure to escape quotes properly for your shell environment.',
@@ -134,9 +130,6 @@ y.command(
       )
       .strict(),
   async argv => {
-    if (isDaemonRunning(argv.sessionId)) {
-      await stopDaemon(argv.sessionId);
-    }
     const isAttachMode =
       argv.browserUrl !== undefined ||
       argv.wsEndpoint !== undefined ||
@@ -144,16 +137,9 @@ y.command(
     if (isAttachMode) {
       delete argv.headless;
       delete argv.isolated;
-    } else {
-      if (argv.isolated === undefined && argv.userDataDir === undefined) {
-        argv.isolated = true;
-      }
-      if (argv.headless === undefined) {
-        argv.headless = true;
-      }
     }
     const args = serializeArgs(getCliOptions(), argv);
-    await start(args, argv.sessionId);
+    await start(args, argv.sessionId, /* stopExisting= */ true);
     process.exit(0);
   },
 ).strict(); // Re-enable strict validation for other commands; this is applied to the yargs instance itself
@@ -209,27 +195,13 @@ y.command(
 
 for (const [commandName, commandDef] of Object.entries(commands)) {
   const args = commandDef.args;
-  const requiredArgNames = Object.keys(args).filter(
-    name => args[name].required,
-  );
-
-  const optionalArgNames = Object.keys(args).filter(
-    name => !args[name].required,
-  );
-
-  let commandStr = commandName;
-  for (const arg of requiredArgNames) {
-    commandStr += ` <${arg}>`;
-  }
-
-  for (const arg of optionalArgNames) {
-    commandStr += ` [--${arg}]`;
-  }
+  const {command, usage} = buildCommand(commandName, args);
 
   y.command(
-    commandStr,
+    command,
     commandDef.description,
     y => {
+      y.usage(usage);
       y.option('output-format', {
         choices: ['md', 'json'],
         default: 'md',
@@ -244,7 +216,7 @@ for (const [commandName, commandDef] of Object.entries(commands)) {
                 ? 'array'
                 : 'string';
 
-        if (opt.required) {
+        if (opt.required || isOptionalPositionalArg(commandName, argName)) {
           const options: PositionalOptions = {
             describe: opt.description,
             type: type as PositionalOptions['type'],

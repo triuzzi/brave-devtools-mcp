@@ -6,12 +6,14 @@
 
 import assert from 'node:assert';
 import {spawn, type ChildProcess} from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-
-import type {CallToolResult} from '@modelcontextprotocol/sdk/types.js';
 
 import type {Browser} from 'puppeteer';
 import puppeteer, {Locator} from 'puppeteer';
+
+import type {CallToolResult} from '../src/third_party/index.js';
 import type {
   Frame,
   HTTPRequest,
@@ -22,14 +24,18 @@ import type {
 } from 'puppeteer-core';
 import sinon from 'sinon';
 
-import type {ParsedArguments} from '../src/config/mcp-options.js';
+import type {ParsedArguments} from '../src/config/ConfigParser.js';
 import {McpContext} from '../src/McpContext.js';
 import {McpResponse} from '../src/McpResponse.js';
 import {TextSnapshot} from '../src/TextSnapshot.js';
 import {DevTools} from '../src/third_party/index.js';
 import {stableIdSymbol} from '../src/utils/id.js';
 
-import {createMockPuppeteerPage, mockListener} from './mocks.js';
+import {
+  createMockParsedArguments,
+  createMockPuppeteerPage,
+  mockListener,
+} from './mocks.js';
 
 export function assertNoServiceWorkerReported(targets: Target[], id: string) {
   const target = targets.find(target => {
@@ -142,6 +148,8 @@ export async function withBrowser(
       const isRetryable =
         error instanceof Error &&
         (error.message === 'withBrowser timeout exceeded' ||
+          error.message.includes('Navigation timeout') ||
+          error.message.includes("Couldn't fetch install info") ||
           error.message.includes('closed') ||
           error.message.includes('crash') ||
           error.message.includes('hang'));
@@ -156,7 +164,11 @@ export async function withBrowser(
 }
 
 export async function withMcpContext(
-  cb: (response: McpResponse, context: McpContext) => Promise<void>,
+  cb: (
+    response: McpResponse,
+    context: McpContext,
+    args: ParsedArguments,
+  ) => Promise<void>,
   options: {
     debug?: boolean;
     autoOpenDevTools?: boolean;
@@ -174,7 +186,9 @@ export async function withMcpContext(
   await withBrowser(async browser => {
     TextSnapshot.resetCounter();
     McpContext.resetPageIdsForTesting();
-    const response = new McpResponse(args as ParsedArguments);
+    McpContext.resetWorkerIdsForTesting();
+    const parsedArgs = createMockParsedArguments(args);
+    const response = new McpResponse(parsedArgs);
     if (context) {
       context.dispose();
     }
@@ -185,20 +199,25 @@ export async function withMcpContext(
         experimentalDevToolsDebugging: false,
         performanceCrux: options.performanceCrux ?? true,
         sourceMaps: options.sourceMaps ?? true,
-        allowList: options.allowedUrlPattern,
+        allowlist: options.allowedUrlPattern,
         blocklist: options.blockedUrlPattern,
         allowUnrestrictedPaths: options.allowUnrestrictedPaths ?? false,
         navigationTimeout:
           options.navigationTimeout ??
           (process.platform === 'win32' ? 20000 : undefined),
-        categoryExtensions: args?.categoryExtensions,
+        categoryExtensions: parsedArgs.categoryExtensions,
       },
       Locator,
     );
 
     response.setPage(context.getSelectedMcpPage());
 
-    await cb(response, context);
+    try {
+      await cb(response, context, parsedArgs);
+    } finally {
+      context.dispose();
+      context = undefined;
+    }
   }, options);
 }
 
@@ -417,6 +436,7 @@ export const CLI_PATH = path.resolve('build/src/bin/brave-devtools.js');
 export async function runCli(
   args: string[],
   sessionId?: string,
+  options?: {cwd?: string},
 ): Promise<{status: number | null; stdout: string; stderr: string}> {
   return new Promise((resolve, reject) => {
     const finalArgs = [...args];
@@ -425,6 +445,7 @@ export async function runCli(
     }
     const child = spawn('node', [CLI_PATH, ...finalArgs], {
       env: process.env,
+      cwd: options?.cwd,
     });
     let stdout = '';
     let stderr = '';
@@ -472,4 +493,43 @@ export async function waitExecutionFor(
   }
 
   throw new Error(`Timeout of ${timeout} reached.`);
+}
+
+export function createTempDir(
+  prefix = 'brave-devtools-test-',
+  baseDir = os.tmpdir(),
+) {
+  const dirPath = fs.mkdtempSync(path.join(baseDir, prefix));
+  return {
+    path: dirPath,
+    [Symbol.dispose]() {
+      try {
+        fs.rmSync(dirPath, {recursive: true, force: true});
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
+
+export function createTempFile(
+  content: string,
+  fileName: string,
+  baseDir = os.tmpdir(),
+) {
+  const dirPath = fs.mkdtempSync(
+    path.join(baseDir, 'brave-devtools-test-file-'),
+  );
+  const filePath = path.join(dirPath, fileName);
+  fs.writeFileSync(filePath, content);
+  return {
+    path: filePath,
+    [Symbol.dispose]() {
+      try {
+        fs.rmSync(dirPath, {recursive: true, force: true});
+      } catch {
+        // ignore
+      }
+    },
+  };
 }

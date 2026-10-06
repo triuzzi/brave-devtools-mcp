@@ -11,10 +11,7 @@ import {afterEach, describe, it} from 'node:test';
 import type {Dialog} from 'puppeteer-core';
 import sinon from 'sinon';
 
-import {
-  parseArguments,
-  type ParsedArguments,
-} from '../../src/config/mcp-options.js';
+import {ConfigParser} from '../../src/config/ConfigParser.js';
 import {
   listPages,
   newPage,
@@ -25,6 +22,7 @@ import {
   handleDialog,
   getTabId,
 } from '../../src/tools/pages.js';
+import {createMockParsedArguments} from '../mocks.js';
 import {assertNoServiceWorkerReported, html, withMcpContext} from '../utils.js';
 
 const EXTENSION_SW_PATH = path.join(
@@ -47,13 +45,13 @@ describe('pages', () => {
 
   describe('list_pages', () => {
     it('list pages', async () => {
-      await withMcpContext(async (response, context) => {
-        await listPages().handler({params: {}}, response, context);
+      await withMcpContext(async (response, context, args) => {
+        await listPages(args).handler({params: {}}, response, context);
         assert.ok(response.includePages);
       });
     });
     it('list pages after selected page is closed', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         // Create a second page and select it.
         const page2 = await context.newPage();
         assert.strictEqual(context.getSelectedMcpPage(), page2);
@@ -62,13 +60,13 @@ describe('pages', () => {
         await page2.pptrPage.close();
 
         // list_pages should still work even though the selected page is gone.
-        await listPages().handler({params: {}}, response, context);
+        await listPages(args).handler({params: {}}, response, context);
         assert.ok(response.includePages);
       });
     });
     it(`list pages for extension pages with --category-extensions`, async t => {
       await withMcpContext(
-        async (response, context) => {
+        async (response, context, args) => {
           const extensionId = await context.installExtension(EXTENSION_PATH);
 
           assert.ok(extensionId);
@@ -80,9 +78,7 @@ describe('pages', () => {
           );
 
           response.resetResponseLineForTesting();
-          const listPageDef = listPages({
-            categoryExtensions: true,
-          } as ParsedArguments);
+          const listPageDef = listPages(args);
           await listPageDef.handler({params: {}}, response, context);
 
           const result = await response.handle(context);
@@ -109,7 +105,7 @@ describe('pages', () => {
     for (const categoryExtensions of [true, false]) {
       it(`list pages for extension service workers ${categoryExtensions ? 'with' : 'without'} --category-extensions`, async t => {
         await withMcpContext(
-          async (response, context) => {
+          async (response, context, args) => {
             const extensionId =
               await context.installExtension(EXTENSION_SW_PATH);
             assert.ok(extensionId);
@@ -121,9 +117,7 @@ describe('pages', () => {
             );
             const swUrl = swTarget.url();
 
-            const listPageDef = listPages({
-              categoryExtensions,
-            } as ParsedArguments);
+            const listPageDef = listPages(args);
             await listPageDef.handler({params: {}}, response, context);
 
             const result = await response.handle(context);
@@ -162,7 +156,7 @@ describe('pages', () => {
 
     it('list pages for side panels with --category-extensions', async t => {
       await withMcpContext(
-        async (response, context) => {
+        async (response, context, args) => {
           const extensionId = await context.installExtension(
             EXTENSION_SIDE_PANEL_PATH,
           );
@@ -181,9 +175,7 @@ describe('pages', () => {
             target => target.type() === 'service_worker',
           );
 
-          const listPageDef = listPages({
-            categoryExtensions: true,
-          } as ParsedArguments);
+          const listPageDef = listPages(args);
           await listPageDef.handler({params: {}}, response, context);
 
           const result = await response.handle(context);
@@ -210,7 +202,7 @@ describe('pages', () => {
     });
 
     it('when dialog is open', async t => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
 
         const dialogPromise = new Promise<Dialog>(resolve => {
@@ -224,7 +216,7 @@ describe('pages', () => {
         });
         const dialog = await dialogPromise;
 
-        await listPages().handler({params: {}}, response, context);
+        await listPages(args).handler({params: {}}, response, context);
 
         const result = await response.handle(context);
         t.assert.snapshot(JSON.stringify(result));
@@ -235,12 +227,12 @@ describe('pages', () => {
   });
   describe('new_page', () => {
     it('create a page', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         assert.strictEqual(
           context.getPageById(1),
           context.getSelectedMcpPage(),
         );
-        await newPage().handler(
+        await newPage(args).handler(
           {params: {url: 'data:text/html,<html></html>'}},
           response,
           context,
@@ -254,11 +246,11 @@ describe('pages', () => {
     });
     it('throws when navigating to a javascript URL and javascriptEvaluation is false', async () => {
       await withMcpContext(async (response, context) => {
-        const disabledArgs = parseArguments(
+        const disabledArgs = new ConfigParser(
           '1.0.0',
           ['node', 'script.js', '--no-javascript-evaluation'],
           {BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
-        );
+        ).parse();
         const tool = newPage(disabledArgs);
         await assert.rejects(
           async () => {
@@ -301,9 +293,45 @@ describe('pages', () => {
         );
       });
     });
-    it('throws when URL does not parse with new URL', async () => {
+    it('throws when navigating to a file URL and fileNavigations is false', async () => {
       await withMcpContext(async (response, context) => {
-        const tool = newPage();
+        const disabledArgs = new ConfigParser(
+          '1.0.0',
+          ['node', 'script.js', '--no-file-navigations'],
+          {BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
+        ).parse();
+        const tool = newPage(disabledArgs);
+        await assert.rejects(
+          async () => {
+            await tool.handler(
+              {params: {url: 'file:///etc/passwd'}},
+              response,
+              context,
+            );
+          },
+          {
+            message:
+              'Navigating to file: URLs is not allowed when --file-navigations is disabled.',
+          },
+        );
+        await assert.rejects(
+          async () => {
+            await tool.handler(
+              {params: {url: 'view-source:file:///etc/passwd'}},
+              response,
+              context,
+            );
+          },
+          {
+            message:
+              'Navigating to file: URLs is not allowed when --file-navigations is disabled.',
+          },
+        );
+      });
+    });
+    it('throws when URL does not parse with new URL', async () => {
+      await withMcpContext(async (response, context, args) => {
+        const tool = newPage(args);
         await assert.rejects(
           async () => {
             await tool.handler(
@@ -320,8 +348,8 @@ describe('pages', () => {
       });
     });
     it('rejects chrome: and chrome-untrusted: URLs', async () => {
-      await withMcpContext(async (response, context) => {
-        const tool = newPage();
+      await withMcpContext(async (response, context, args) => {
+        const tool = newPage(args);
         await assert.rejects(
           async () => {
             await tool.handler(
@@ -350,8 +378,8 @@ describe('pages', () => {
       });
     });
     it('rejects chrome-extension: URLs unless categoryExtensions is enabled', async () => {
-      await withMcpContext(async (response, context) => {
-        const tool = newPage();
+      await withMcpContext(async (response, context, args) => {
+        const tool = newPage(args);
         await assert.rejects(
           async () => {
             await tool.handler(
@@ -368,8 +396,8 @@ describe('pages', () => {
       });
     });
     it('allows chrome://newtab/', async () => {
-      await withMcpContext(async (response, context) => {
-        const tool = newPage();
+      await withMcpContext(async (response, context, args) => {
+        const tool = newPage(args);
         await tool.handler(
           {params: {url: 'chrome://newtab/'}},
           response,
@@ -384,7 +412,7 @@ describe('pages', () => {
       });
     });
     it('create a page in the background', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const originalPage = context.getPageById(1);
         assert.strictEqual(originalPage, context.getSelectedMcpPage());
         // Ensure original page has focus
@@ -393,7 +421,7 @@ describe('pages', () => {
           await originalPage.pptrPage.evaluate(() => document.hasFocus()),
           true,
         );
-        await newPage().handler(
+        await newPage(args).handler(
           {params: {url: 'data:text/html,<html></html>', background: true}},
           response,
           context,
@@ -413,8 +441,8 @@ describe('pages', () => {
   });
   describe('new_page with isolatedContext', () => {
     it('creates a page in an isolated context', async () => {
-      await withMcpContext(async (response, context) => {
-        await newPage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -431,7 +459,7 @@ describe('pages', () => {
     });
 
     it('keeps focus when background is true with isolatedContext', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const originalPage = context.getPageById(1);
         assert.strictEqual(originalPage, context.getSelectedMcpPage());
         // Ensure original page has focus
@@ -440,7 +468,7 @@ describe('pages', () => {
           await originalPage.pptrPage.evaluate(() => document.hasFocus()),
           true,
         );
-        await newPage().handler(
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -463,8 +491,8 @@ describe('pages', () => {
     });
 
     it('reuses the same context for the same isolatedContext name', async () => {
-      await withMcpContext(async (response, context) => {
-        await newPage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -476,7 +504,7 @@ describe('pages', () => {
         );
         const mcpPage1 = context.getSelectedMcpPage();
         const page1 = mcpPage1.pptrPage;
-        await newPage().handler(
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -496,8 +524,8 @@ describe('pages', () => {
     });
 
     it('creates separate contexts for different isolatedContext names', async () => {
-      await withMcpContext(async (response, context) => {
-        await newPage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -509,7 +537,7 @@ describe('pages', () => {
         );
         const mcpPageA = context.getSelectedMcpPage();
         const pageA = mcpPageA.pptrPage;
-        await newPage().handler(
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -528,8 +556,8 @@ describe('pages', () => {
     });
 
     it('includes isolatedContext in page listing', async () => {
-      await withMcpContext(async (response, context) => {
-        await newPage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -549,10 +577,10 @@ describe('pages', () => {
     });
 
     it('does not set isolatedContext for pages in the default context', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const mcpPage = context.getSelectedMcpPage();
         assert.strictEqual(mcpPage.isolatedContextName, undefined);
-        await newPage().handler(
+        await newPage(args).handler(
           {params: {url: 'data:text/html,<html></html>'}},
           response,
           context,
@@ -565,8 +593,8 @@ describe('pages', () => {
     });
 
     it('closes an isolated page without errors', async () => {
-      await withMcpContext(async (response, context) => {
-        await newPage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -579,13 +607,13 @@ describe('pages', () => {
         const page = context.getSelectedMcpPage().pptrPage;
         const pageId = context.getSelectedMcpPage().id;
         assert.ok(!page.isClosed());
-        await closePage.handler({params: {pageId}}, response, context);
+        await closePage(args).handler({params: {pageId}}, response, context);
         assert.ok(page.isClosed());
       });
     });
 
     it('when dialog is open', async t => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
 
         const dialogPromise = new Promise<Dialog>(resolve => {
@@ -599,7 +627,7 @@ describe('pages', () => {
         });
         const dialog = await dialogPromise;
 
-        await newPage().handler(
+        await newPage(args).handler(
           {params: {url: 'data:text/html,<html></html>'}},
           response,
           context,
@@ -614,8 +642,8 @@ describe('pages', () => {
   });
 
   it('navigate_page targets the pageId page, not the global selection', async () => {
-    await withMcpContext(async (response, context) => {
-      await newPage().handler(
+    await withMcpContext(async (response, context, args) => {
+      await newPage(args).handler(
         {
           params: {
             url: 'data:text/html,<h1>Initial</h1>',
@@ -628,11 +656,11 @@ describe('pages', () => {
       const isolatedPage = context.getSelectedMcpPage();
 
       // Switch global selection back to the default page.
-      await selectPage.handler({params: {pageId: 1}}, response, context);
+      await selectPage(args).handler({params: {pageId: 1}}, response, context);
       assert.notStrictEqual(context.getSelectedMcpPage(), isolatedPage);
 
       // Navigate using page; should target the isolated page.
-      await navigatePage().handler(
+      await navigatePage(args).handler(
         {
           params: {
             url: 'data:text/html,<h1>Navigated</h1>',
@@ -659,22 +687,22 @@ describe('pages', () => {
 
   describe('close_page', () => {
     it('closes a page', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = await context.newPage();
         assert.strictEqual(
           context.getPageById(2),
           context.getSelectedMcpPage(),
         );
         assert.strictEqual(context.getPageById(2), page);
-        await closePage.handler({params: {pageId: 2}}, response, context);
+        await closePage(args).handler({params: {pageId: 2}}, response, context);
         assert.ok(page.pptrPage.isClosed());
         assert.ok(response.includePages);
       });
     });
     it('cannot close the last page', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
-        await closePage.handler({params: {pageId: 1}}, response, context);
+        await closePage(args).handler({params: {pageId: 1}}, response, context);
         assert.deepStrictEqual(
           response.responseLines[0],
           `The last open page cannot be closed. It is fine to keep it open.`,
@@ -685,7 +713,7 @@ describe('pages', () => {
     });
 
     it('when dialog is open', async t => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = await context.newPage();
         assert.strictEqual(
           context.getPageById(2),
@@ -706,7 +734,7 @@ describe('pages', () => {
           });
         await dialogPromise;
 
-        await closePage.handler({params: {pageId: 2}}, response, context);
+        await closePage(args).handler({params: {pageId: 2}}, response, context);
 
         const result = await response.handle(context);
         t.assert.snapshot(JSON.stringify(result));
@@ -715,13 +743,17 @@ describe('pages', () => {
   });
   describe('select_page', () => {
     it('selects a page', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         await context.newPage();
         assert.strictEqual(
           context.getPageById(2),
           context.getSelectedMcpPage(),
         );
-        await selectPage.handler({params: {pageId: 1}}, response, context);
+        await selectPage(args).handler(
+          {params: {pageId: 1}},
+          response,
+          context,
+        );
         assert.strictEqual(
           context.getPageById(1),
           context.getSelectedMcpPage(),
@@ -730,7 +762,7 @@ describe('pages', () => {
       });
     });
     it('selects a page and keeps it focused in the background', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         await context.newPage();
         assert.strictEqual(
           context.getPageById(2),
@@ -742,7 +774,11 @@ describe('pages', () => {
             .pptrPage.evaluate(() => document.hasFocus()),
           true,
         );
-        await selectPage.handler({params: {pageId: 1}}, response, context);
+        await selectPage(args).handler(
+          {params: {pageId: 1}},
+          response,
+          context,
+        );
         assert.strictEqual(
           context.getPageById(1),
           context.getSelectedMcpPage(),
@@ -757,9 +793,9 @@ describe('pages', () => {
       });
     });
     it('preserves focus across different browser contexts', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         // Create pages in separate isolated contexts.
-        await newPage().handler(
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -772,7 +808,7 @@ describe('pages', () => {
         const pageA = context.getSelectedMcpPage().pptrPage;
         const pageAId = context.getSelectedMcpPage().id;
 
-        await newPage().handler(
+        await newPage(args).handler(
           {
             params: {
               url: 'data:text/html,<html></html>',
@@ -795,7 +831,7 @@ describe('pages', () => {
         );
 
         // Switching back to pageA should preserve pageB's focus.
-        await selectPage.handler(
+        await selectPage(args).handler(
           {params: {pageId: pageAId}},
           response,
           context,
@@ -812,7 +848,7 @@ describe('pages', () => {
     });
 
     it('when dialog is open', async t => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
 
         const dialogPromise = new Promise<Dialog>(resolve => {
@@ -826,7 +862,11 @@ describe('pages', () => {
         });
         const dialog = await dialogPromise;
 
-        await selectPage.handler({params: {pageId: 1}}, response, context);
+        await selectPage(args).handler(
+          {params: {pageId: 1}},
+          response,
+          context,
+        );
 
         const result = await response.handle(context);
         t.assert.snapshot(JSON.stringify(result));
@@ -837,8 +877,8 @@ describe('pages', () => {
   });
   describe('navigate_page', () => {
     it('navigates to correct page', async () => {
-      await withMcpContext(async (response, context) => {
-        await navigatePage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await navigatePage(args).handler(
           {
             params: {url: 'data:text/html,<div>Hello MCP</div>'},
             page: context.getSelectedMcpPage(),
@@ -855,8 +895,39 @@ describe('pages', () => {
       });
     });
 
-    it('throws an error if the page was closed not by the MCP server', async () => {
+    it('throws when navigating to a file URL and fileNavigations is false', async () => {
       await withMcpContext(async (response, context) => {
+        const disabledArgs = new ConfigParser(
+          '1.0.0',
+          ['node', 'script.js', '--no-file-navigations'],
+          {BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
+        ).parse();
+        await assert.rejects(
+          async () => {
+            await navigatePage(disabledArgs).handler(
+              {
+                params: {url: 'file:///etc/passwd'},
+                page: context.getSelectedMcpPage(),
+              },
+              response,
+              context,
+            );
+          },
+          {
+            message:
+              'Navigating to file: URLs is not allowed when --file-navigations is disabled.',
+          },
+        );
+        // The page must not have left about:blank.
+        assert.strictEqual(
+          context.getSelectedMcpPage().pptrPage.url(),
+          'about:blank',
+        );
+      });
+    });
+
+    it('throws an error if the page was closed not by the MCP server', async () => {
+      await withMcpContext(async (response, context, args) => {
         const page = await context.newPage();
         assert.strictEqual(
           context.getPageById(2),
@@ -867,7 +938,7 @@ describe('pages', () => {
         await page.pptrPage.close();
 
         try {
-          await navigatePage().handler(
+          await navigatePage(args).handler(
             {
               params: {url: 'data:text/html,<div>Hello MCP</div>'},
               page: context.getSelectedMcpPage(),
@@ -886,38 +957,45 @@ describe('pages', () => {
     });
 
     it('respects the timeout parameter', async () => {
-      await withMcpContext(async (response, context) => {
-        const page = context.getSelectedMcpPage().pptrPage;
-        const stub = sinon.stub(page, 'waitForNavigation').resolves(null);
+      await withMcpContext(async (response, context, args) => {
+        const mcpPage = context.getSelectedMcpPage();
+        const waitForEventsSpy = sinon.spy(mcpPage, 'waitForEventsAfterAction');
+        const gotoSpy = sinon.spy(mcpPage.pptrPage, 'goto');
 
         try {
-          await navigatePage().handler(
+          await navigatePage(args).handler(
             {
               params: {
                 url: 'data:text/html,<html></html>',
                 timeout: 12345,
               },
-              page: context.getSelectedMcpPage(),
+              page: mcpPage,
             },
             response,
             context,
           );
         } finally {
-          stub.restore();
+          waitForEventsSpy.restore();
+          gotoSpy.restore();
         }
 
+        sinon.assert.calledOnceWithExactly(
+          gotoSpy,
+          'data:text/html,<html></html>',
+          {timeout: 12345},
+        );
         assert.strictEqual(
-          stub.firstCall.args[0]?.timeout,
+          waitForEventsSpy.firstCall.args[1]?.timeout,
           12345,
-          'The timeout parameter should be passed to waitForNavigation',
+          'The timeout parameter should be passed to waitForEventsAfterAction',
         );
       });
     });
     it('go back', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         await page.goto('data:text/html,<div>Hello MCP</div>');
-        await navigatePage().handler(
+        await navigatePage(args).handler(
           {params: {type: 'back'}, page: context.getSelectedMcpPage()},
           response,
           context,
@@ -931,11 +1009,11 @@ describe('pages', () => {
       });
     });
     it('go forward', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         await page.goto('data:text/html,<div>Hello MCP</div>');
         await page.goBack();
-        await navigatePage().handler(
+        await navigatePage(args).handler(
           {params: {type: 'forward'}, page: context.getSelectedMcpPage()},
           response,
           context,
@@ -949,10 +1027,10 @@ describe('pages', () => {
       });
     });
     it('reload', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         await page.goto('data:text/html,<div>Hello MCP</div>');
-        await navigatePage().handler(
+        await navigatePage(args).handler(
           {params: {type: 'reload'}, page: context.getSelectedMcpPage()},
           response,
           context,
@@ -967,7 +1045,7 @@ describe('pages', () => {
     });
 
     it('reload with accpeting the beforeunload dialog', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(
           html` <script>
@@ -980,7 +1058,7 @@ describe('pages', () => {
         // Grant user activation so Chrome permits the beforeunload dialog
         await page.mouse.click(10, 10);
 
-        await navigatePage().handler(
+        await navigatePage(args).handler(
           {params: {type: 'reload'}, page: context.getSelectedMcpPage()},
           response,
           context,
@@ -996,7 +1074,7 @@ describe('pages', () => {
     });
 
     it('reload with declining the beforeunload dialog', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(
           html` <script>
@@ -1009,7 +1087,7 @@ describe('pages', () => {
         // Grant user activation so Chrome permits the beforeunload dialog
         await page.mouse.click(10, 10);
 
-        await navigatePage().handler(
+        await navigatePage(args).handler(
           {
             params: {
               type: 'reload',
@@ -1032,8 +1110,8 @@ describe('pages', () => {
     });
 
     it('go forward with error', async () => {
-      await withMcpContext(async (response, context) => {
-        await navigatePage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await navigatePage(args).handler(
           {params: {type: 'forward'}, page: context.getSelectedMcpPage()},
           response,
           context,
@@ -1048,8 +1126,8 @@ describe('pages', () => {
       });
     });
     it('go back with error', async () => {
-      await withMcpContext(async (response, context) => {
-        await navigatePage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await navigatePage(args).handler(
           {params: {type: 'back'}, page: context.getSelectedMcpPage()},
           response,
           context,
@@ -1064,8 +1142,8 @@ describe('pages', () => {
       });
     });
     it('navigates to correct page with initScript', async () => {
-      await withMcpContext(async (response, context) => {
-        await navigatePage().handler(
+      await withMcpContext(async (response, context, args) => {
+        await navigatePage(args).handler(
           {
             params: {
               url: 'data:text/html,<div>Hello MCP</div>',
@@ -1088,25 +1166,25 @@ describe('pages', () => {
     });
 
     it('omits initScript from schema when javascriptEvaluation is false', () => {
-      const defaultTool = navigatePage();
+      const defaultTool = navigatePage(createMockParsedArguments());
       assert.strictEqual('initScript' in defaultTool.schema, true);
 
-      const disabledArgs = parseArguments(
+      const disabledArgs = new ConfigParser(
         '1.0.0',
         ['node', 'script.js', '--no-javascript-evaluation'],
         {BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
-      );
+      ).parse();
       const disabledTool = navigatePage(disabledArgs);
       assert.strictEqual('initScript' in disabledTool.schema, false);
     });
 
     it('throws when navigating to a javascript, data, or vbscript URL and javascriptEvaluation is false', async () => {
       await withMcpContext(async (response, context) => {
-        const disabledArgs = parseArguments(
+        const disabledArgs = new ConfigParser(
           '1.0.0',
           ['node', 'script.js', '--no-javascript-evaluation'],
           {BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
-        );
+        ).parse();
         const tool = navigatePage(disabledArgs);
         await assert.rejects(
           async () => {
@@ -1166,8 +1244,8 @@ describe('pages', () => {
     });
 
     it('throws when URL does not parse with new URL', async () => {
-      await withMcpContext(async (response, context) => {
-        const tool = navigatePage();
+      await withMcpContext(async (response, context, args) => {
+        const tool = navigatePage(args);
         await assert.rejects(
           async () => {
             await tool.handler(
@@ -1190,8 +1268,8 @@ describe('pages', () => {
     });
 
     it('rejects chrome: and chrome-untrusted: URLs', async () => {
-      await withMcpContext(async (response, context) => {
-        const tool = navigatePage();
+      await withMcpContext(async (response, context, args) => {
+        const tool = navigatePage(args);
         await assert.rejects(
           async () => {
             await tool.handler(
@@ -1226,8 +1304,8 @@ describe('pages', () => {
     });
 
     it('rejects chrome-extension: URLs unless categoryExtensions is enabled', async () => {
-      await withMcpContext(async (response, context) => {
-        const tool = navigatePage();
+      await withMcpContext(async (response, context, args) => {
+        const tool = navigatePage(args);
         await assert.rejects(
           async () => {
             await tool.handler(
@@ -1248,8 +1326,8 @@ describe('pages', () => {
     });
 
     it('allows chrome://newtab/', async () => {
-      await withMcpContext(async (response, context) => {
-        const tool = navigatePage();
+      await withMcpContext(async (response, context, args) => {
+        const tool = navigatePage(args);
         await tool.handler(
           {
             params: {url: 'chrome://newtab/'},
@@ -1268,7 +1346,7 @@ describe('pages', () => {
     });
 
     it('when dialog is open', async t => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const dialogPromise = new Promise<void>(resolve => {
           page.on('dialog', () => resolve());
@@ -1283,7 +1361,7 @@ describe('pages', () => {
           });
         await dialogPromise;
 
-        await navigatePage().handler(
+        await navigatePage(args).handler(
           {
             params: {url: 'data:text/html,<div>Navigated</div>'},
             page: context.getSelectedMcpPage(),
@@ -1299,14 +1377,14 @@ describe('pages', () => {
   });
   describe('resize', () => {
     it('resize the page', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const resizePromise = page.evaluate(() => {
           return new Promise(resolve => {
             window.addEventListener('resize', resolve, {once: true});
           });
         });
-        await resizePage.handler(
+        await resizePage(args).handler(
           {
             params: {width: 700, height: 500},
             page: context.getSelectedMcpPage(),
@@ -1326,7 +1404,7 @@ describe('pages', () => {
     });
 
     it('resize when window state is normal', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const browser = page.browser();
         const windowId = await page.windowId();
@@ -1340,7 +1418,7 @@ describe('pages', () => {
             window.addEventListener('resize', resolve, {once: true});
           });
         });
-        await resizePage.handler(
+        await resizePage(args).handler(
           {
             params: {width: 650, height: 450},
             page: context.getSelectedMcpPage(),
@@ -1360,7 +1438,7 @@ describe('pages', () => {
     });
 
     it('resize when window state is minimized', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const browser = page.browser();
         const windowId = await page.windowId();
@@ -1374,7 +1452,7 @@ describe('pages', () => {
             window.addEventListener('resize', resolve, {once: true});
           });
         });
-        await resizePage.handler(
+        await resizePage(args).handler(
           {
             params: {width: 750, height: 550},
             page: context.getSelectedMcpPage(),
@@ -1394,7 +1472,7 @@ describe('pages', () => {
     });
 
     it('resize when window state is maximized', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const browser = page.browser();
         const windowId = await page.windowId();
@@ -1408,7 +1486,7 @@ describe('pages', () => {
             window.addEventListener('resize', resolve, {once: true});
           });
         });
-        await resizePage.handler(
+        await resizePage(args).handler(
           {
             params: {width: 725, height: 525},
             page: context.getSelectedMcpPage(),
@@ -1434,7 +1512,7 @@ describe('pages', () => {
       'resize when window state is fullscreen',
       {skip: process.platform === 'darwin'},
       async () => {
-        await withMcpContext(async (response, context) => {
+        await withMcpContext(async (response, context, args) => {
           const page = context.getSelectedMcpPage().pptrPage;
           const browser = page.browser();
           const windowId = await page.windowId();
@@ -1448,7 +1526,7 @@ describe('pages', () => {
               window.addEventListener('resize', resolve, {once: true});
             });
           });
-          await resizePage.handler(
+          await resizePage(args).handler(
             {
               params: {width: 850, height: 650},
               page: context.getSelectedMcpPage(),
@@ -1469,7 +1547,7 @@ describe('pages', () => {
     );
 
     it('when dialog is open', async t => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const dialogPromise = new Promise<Dialog>(resolve => {
           page.on('dialog', dialog => {
@@ -1482,7 +1560,7 @@ describe('pages', () => {
         });
         const dialog = await dialogPromise;
 
-        await resizePage.handler(
+        await resizePage(args).handler(
           {
             params: {width: 1600, height: 1400},
             page: context.getSelectedMcpPage(),
@@ -1501,7 +1579,7 @@ describe('pages', () => {
 
   describe('dialogs', () => {
     it('can accept dialogs', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const dialogPromise = new Promise<void>(resolve => {
           page.on('dialog', () => {
@@ -1512,7 +1590,7 @@ describe('pages', () => {
           alert('test');
         });
         await dialogPromise;
-        await handleDialog.handler(
+        await handleDialog(args).handler(
           {
             params: {
               action: 'accept',
@@ -1531,7 +1609,7 @@ describe('pages', () => {
       });
     });
     it('can dismiss dialogs', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const dialogPromise = new Promise<void>(resolve => {
           page.on('dialog', () => {
@@ -1542,7 +1620,7 @@ describe('pages', () => {
           alert('test');
         });
         await dialogPromise;
-        await handleDialog.handler(
+        await handleDialog(args).handler(
           {
             params: {
               action: 'dismiss',
@@ -1561,7 +1639,7 @@ describe('pages', () => {
       });
     });
     it('can dismiss already dismissed dialog dialogs', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         const dialogPromise = new Promise<Dialog>(resolve => {
           page.on('dialog', dialog => {
@@ -1573,7 +1651,7 @@ describe('pages', () => {
         });
         const dialog = await dialogPromise;
         await dialog.dismiss();
-        await handleDialog.handler(
+        await handleDialog(args).handler(
           {
             params: {
               action: 'dismiss',
@@ -1592,7 +1670,7 @@ describe('pages', () => {
       });
     });
     it('can handle a dialog on a non-selected page via pageId', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page1 = context.getSelectedMcpPage();
         await context.newPage(); // page2 is now selected
 
@@ -1607,7 +1685,7 @@ describe('pages', () => {
         await dialogPromise;
 
         // page1 is not selected, but its dialog should be accessible via page.
-        await handleDialog.handler(
+        await handleDialog(args).handler(
           {
             params: {
               action: 'accept',
@@ -1626,7 +1704,7 @@ describe('pages', () => {
       });
     });
     it('tracks dialogs independently per page', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page1 = context.getSelectedMcpPage();
         await context.newPage();
         const page2 = context.getSelectedMcpPage();
@@ -1658,7 +1736,7 @@ describe('pages', () => {
         assert.ok(page2.getDialog());
 
         // Handle page1's dialog; page2's should remain.
-        await handleDialog.handler(
+        await handleDialog(args).handler(
           {params: {action: 'accept'}, page: page1},
           response,
           context,
@@ -1667,7 +1745,7 @@ describe('pages', () => {
         assert.ok(page2.getDialog());
 
         // Handle page2's dialog.
-        await handleDialog.handler(
+        await handleDialog(args).handler(
           {params: {action: 'dismiss'}, page: page2},
           response,
           context,
@@ -1681,13 +1759,13 @@ describe('pages', () => {
 
   describe('get_tab_id', () => {
     it('returns the tab id', async () => {
-      await withMcpContext(async (response, context) => {
+      await withMcpContext(async (response, context, args) => {
         const page = context.getSelectedMcpPage().pptrPage;
         // @ts-expect-error _tabId is internal.
         assert.ok(typeof page._tabId === 'string');
         // @ts-expect-error _tabId is internal.
         page._tabId = 'test-tab-id';
-        await getTabId.handler(
+        await getTabId(args).handler(
           {params: {}, page: context.getSelectedMcpPage()},
           response,
           context,

@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import {pathToFileURL} from 'node:url';
+
+import type {ParsedArguments} from '../config/ConfigParser.js';
 import {zod} from '../third_party/index.js';
 import type {Frame, JSHandle, Page, WebWorker} from '../third_party/index.js';
-import type {ExtensionServiceWorker} from '../types.js';
 
 import {ToolCategory} from './categories.js';
 import type {Context, Response} from './ToolDefinition.js';
@@ -14,17 +16,17 @@ import {defineTool, pageIdSchema} from './ToolDefinition.js';
 
 export type Evaluatable = Page | Frame | WebWorker;
 
-export const evaluateScript = defineTool(cliArgs => {
+export const evaluateScript = defineTool((cliArgs: ParsedArguments) => {
   return {
     name: 'evaluate_script',
-    description: `Evaluate a JavaScript function inside the target page${cliArgs?.categoryExtensions ? ' or service worker' : ''}. Returns the response as JSON, so returned values have to be JSON-serializable.`,
+    description: `Evaluate JavaScript inside the target page${cliArgs.categoryExtensions ? ' or service worker' : ''}. The source can be provided inline or loaded from a local file. Returns the response as JSON, so returned values have to be JSON-serializable.`,
     annotations: {
       category: ToolCategory.DEBUGGING,
       readOnlyHint: false,
       conditions: ['javascriptEvaluation'],
     },
     schema: {
-      ...(cliArgs?.pageIdRouting
+      ...(cliArgs.pageIdRouting
         ? cliArgs.categoryExtensions
           ? {
               pageId: zod
@@ -36,12 +38,27 @@ export const evaluateScript = defineTool(cliArgs => {
             }
           : pageIdSchema
         : {}),
-      function: zod.string().describe(
-        `A JavaScript function declaration to be executed by the tool in the target page.
+      function: zod
+        .string()
+        .optional()
+        .describe(
+          `JavaScript source to execute in the target page. Provide either this or sourcePath, but not both. The source is interpreted according to format.
 Example without arguments: \`() => document.title\` or \`async () => await fetch("example.com")\`.
 Example with arguments: \`(el) => el.innerText\`
 `,
-      ),
+        ),
+      sourcePath: zod
+        .string()
+        .optional()
+        .describe(
+          "The absolute or relative path to a JavaScript file on the MCP server's local filesystem. Provide either this or function, but not both.",
+        ),
+      format: zod
+        .enum(['function', 'script'])
+        .optional()
+        .describe(
+          'How to interpret the source. "function" treats it as a function declaration and supports args. "script" evaluates it as classic JavaScript and does not support args. Defaults to "function". ECMAScript modules are not supported.',
+        ),
       args: zod
         .array(
           zod
@@ -70,7 +87,7 @@ Example with arguments: \`(el) => el.innerText\`
         .describe(
           'Whether to wait for the DOM to settle. Pass false if the script only reads data. Defaults to true.',
         ),
-      ...(cliArgs?.categoryExtensions
+      ...(cliArgs.categoryExtensions
         ? {
             serviceWorkerId: zod
               .string()
@@ -84,19 +101,27 @@ Example with arguments: \`(el) => el.innerText\`
     blockedByDialog: true,
     verifyFilesSchema: {
       filePath: true,
+      sourcePath: true,
     },
     handler: async (request, response, context) => {
       const {
         serviceWorkerId,
         args: uidArgs,
         function: fnString,
+        sourcePath,
+        format = 'function',
         pageId,
         dialogAction,
         filePath,
         waitForStableDom,
       } = request.params;
 
-      if (cliArgs?.categoryExtensions && serviceWorkerId) {
+      const source = await resolveScriptSource(fnString, sourcePath, context);
+      if (format === 'script' && uidArgs && uidArgs.length > 0) {
+        throw new Error('args cannot be used when format is "script".');
+      }
+
+      if (cliArgs.categoryExtensions && serviceWorkerId) {
         if (uidArgs && uidArgs.length > 0) {
           throw new Error(
             'args (element uids) cannot be used when evaluating in a service worker.',
@@ -111,7 +136,7 @@ Example with arguments: \`(el) => el.innerText\`
           .getSelectedMcpPage()
           .waitForEventsAfterAction(
             async () => {
-              await performEvaluation(worker, fnString, [], response, {
+              await performEvaluation(worker, source, format, [], response, {
                 filePath,
                 context,
               });
@@ -126,14 +151,15 @@ Example with arguments: \`(el) => el.innerText\`
         return;
       }
 
-      if (cliArgs?.categoryExtensions && cliArgs?.pageIdRouting && !pageId) {
+      if (cliArgs.categoryExtensions && cliArgs.pageIdRouting && !pageId) {
         throw new Error('specify either a pageId or a serviceWorkerId.');
       }
 
       const mcpPage =
-        cliArgs?.pageIdRouting && request.params.pageId
+        cliArgs.pageIdRouting && request.params.pageId
           ? context.getPageById(request.params.pageId)
           : context.getSelectedMcpPage();
+      await mcpPage.init();
       const page: Page = mcpPage.pptrPage;
 
       const args: Array<JSHandle<unknown>> = [];
@@ -151,7 +177,7 @@ Example with arguments: \`(el) => el.innerText\`
 
       const result = await mcpPage.waitForEventsAfterAction(
         async () => {
-          await performEvaluation(evaluatable, fnString, args, response, {
+          await performEvaluation(evaluatable, source, format, args, response, {
             filePath,
             context,
           });
@@ -163,24 +189,63 @@ Example with arguments: \`(el) => el.innerText\`
   };
 });
 
+const resolveScriptSource = async (
+  inlineSource: string | undefined,
+  sourcePath: string | undefined,
+  context: Context,
+): Promise<string> => {
+  if (inlineSource !== undefined) {
+    if (sourcePath !== undefined) {
+      throw new Error('Specify exactly one of function or sourcePath.');
+    }
+    return inlineSource;
+  }
+  if (sourcePath === undefined) {
+    throw new Error('Specify exactly one of function or sourcePath.');
+  }
+
+  const resourceUrl = sourcePath.startsWith('file:')
+    ? sourcePath
+    : pathToFileURL(sourcePath).href;
+  try {
+    return await context.loadResource(resourceUrl);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Unable to read script source from ${sourcePath}: ${errorMessage}`,
+      {cause: error},
+    );
+  }
+};
+
 const performEvaluation = async (
   evaluatable: Evaluatable,
-  fnString: string,
+  source: string,
+  format: 'function' | 'script',
   args: Array<JSHandle<unknown>>,
   response: Response,
-  options?: {filePath: string; context: Context},
+  options: {filePath?: string; context: Context},
 ) => {
-  using fn = await evaluatable.evaluateHandle(`(${fnString})`);
+  let result: string | undefined;
+  if (format === 'function') {
+    const functionSource = source.trimEnd().replace(/;$/, '');
+    using fn = await evaluatable.evaluateHandle<
+      [],
+      () => (...args: unknown[]) => unknown
+    >(`(\n${functionSource}\n)`);
+    result = await evaluatable.evaluate(
+      async (fn, ...args) => {
+        return JSON.stringify(await fn(...args));
+      },
+      fn,
+      ...args,
+    );
+  } else {
+    using value = await evaluatable.evaluateHandle(source);
+    result = await evaluatable.evaluate(value => JSON.stringify(value), value);
+  }
 
-  const result = await evaluatable.evaluate(
-    async (fn, ...args) => {
-      // @ts-expect-error no types for function fn
-      return JSON.stringify(await fn(...args));
-    },
-    fn,
-    ...args,
-  );
-  if (options?.filePath) {
+  if (options.filePath) {
     const data = new TextEncoder().encode(result ?? 'undefined');
     const {filename} = await options.context.saveFile(
       data,
@@ -219,22 +284,16 @@ const getWebWorker = async (
   context: Context,
   serviceWorkerId: string,
 ): Promise<WebWorker> => {
-  const serviceWorkers = context.getExtensionServiceWorkers();
+  const serviceWorker = context.getWorkerById(serviceWorkerId);
 
-  const serviceWorker = serviceWorkers.find(
-    (sw: ExtensionServiceWorker) =>
-      context.getExtensionServiceWorkerId(sw) === serviceWorkerId,
-  );
-
-  if (serviceWorker && serviceWorker.target) {
-    const worker = await serviceWorker.target.worker();
-
-    if (!worker) {
-      throw new Error('Service worker target not found.');
-    }
-
-    return worker;
-  } else {
+  if (!serviceWorker || serviceWorker.type !== 'service_worker') {
     throw new Error('Service worker not found.');
   }
+
+  const worker = await serviceWorker.worker();
+  if (!worker) {
+    throw new Error('Service worker target not found.');
+  }
+
+  return worker;
 };
