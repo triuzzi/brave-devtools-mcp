@@ -330,3 +330,29 @@ You can connect directly to a Brave WebSocket endpoint and include custom header
 To get the WebSocket endpoint from a running Brave instance, visit `http://127.0.0.1:9222/json/version` and look for the `webSocketDebuggerUrl` field.
 
 You can also run `npx brave-mcp@latest --help` to see all available configuration options.
+
+## Protocol timeout
+
+Heavy pages can keep Brave busy for minutes, so each DevTools protocol call may
+take up to 10 minutes before it fails. A tool call waits for the browser for
+just as long: launching or connecting to Brave, waiting for you to allow remote
+debugging with `--autoConnect`, and setting up the selected page. Set the
+`BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS` environment variable to change both, for
+example to fail sooner when a remote endpoint stops responding:
+
+```json
+{
+  "mcpServers": {
+    "brave-devtools": {
+      "command": "npx",
+      "args": ["brave-mcp@latest", "--browserUrl=http://127.0.0.1:9222"],
+      "env": {
+        "BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS": "120000"
+      }
+    }
+  }
+}
+```
+
+The value is in milliseconds, from `1` to `2147483647`. A tool call always waits
+at least 60 seconds for the browser.
