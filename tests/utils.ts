@@ -6,9 +6,11 @@
 
 import assert from 'node:assert';
 import {spawn, type ChildProcess} from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type {TestContext} from 'node:test';
 
 import type {Browser} from 'puppeteer';
 import puppeteer, {Locator} from 'puppeteer';
@@ -25,8 +27,11 @@ import type {
 import sinon from 'sinon';
 
 import type {ParsedArguments} from '../src/config/ConfigParser.js';
+import {stopDaemon} from '../src/daemon/client.js';
+import {isDaemonRunning} from '../src/daemon/utils.js';
 import {McpContext} from '../src/McpContext.js';
 import {McpResponse} from '../src/McpResponse.js';
+import {HeapSnapshotManager} from '../src/processors/HeapSnapshotManager.js';
 import {TextSnapshot} from '../src/TextSnapshot.js';
 import {DevTools} from '../src/third_party/index.js';
 import {stableIdSymbol} from '../src/utils/id.js';
@@ -189,6 +194,7 @@ export async function withMcpContext(
     McpContext.resetWorkerIdsForTesting();
     const parsedArgs = createMockParsedArguments(args);
     const response = new McpResponse(parsedArgs);
+    const heapSnapshotManager = new HeapSnapshotManager();
     if (context) {
       context.dispose();
     }
@@ -206,6 +212,7 @@ export async function withMcpContext(
           options.navigationTimeout ??
           (process.platform === 'win32' ? 20000 : undefined),
         categoryExtensions: parsedArgs.categoryExtensions,
+        heapSnapshotManager,
       },
       Locator,
     );
@@ -216,6 +223,7 @@ export async function withMcpContext(
       await cb(response, context, parsedArgs);
     } finally {
       context.dispose();
+      heapSnapshotManager.dispose();
       context = undefined;
     }
   }, options);
@@ -438,10 +446,11 @@ export async function runCli(
   sessionId?: string,
   options?: {cwd?: string},
 ): Promise<{status: number | null; stdout: string; stderr: string}> {
-  return new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     const finalArgs = [...args];
     if (sessionId) {
-      finalArgs.push('--sessionId', sessionId);
+      // Prepend so that the flag is not swallowed by a trailing `--`.
+      finalArgs.unshift('--sessionId', sessionId);
     }
     const child = spawn('node', [CLI_PATH, ...finalArgs], {
       env: process.env,
@@ -468,6 +477,27 @@ export async function assertDaemonIsNotRunning(sessionId?: string) {
     result.stdout,
     'brave-devtools-mcp daemon is not running.\n',
   );
+}
+
+/**
+ * Stops the daemon in-process. Use it for test cleanup: it does not spawn
+ * a CLI process, which takes about a second per call.
+ */
+export async function stopDaemonForCleanup(sessionId: string) {
+  await stopDaemon(sessionId);
+  assert.ok(!isDaemonRunning(sessionId), 'daemon is still running');
+}
+
+/**
+ * Creates a new CLI session ID for one test and stops its daemon after the
+ * test. Each test gets its own session, so tests can run concurrently.
+ */
+export function createCliSession(t: TestContext): string {
+  const sessionId = crypto.randomUUID();
+  t.after(async () => {
+    await stopDaemonForCleanup(sessionId);
+  });
+  return sessionId;
 }
 
 export async function assertDaemonIsRunning(sessionId?: string) {

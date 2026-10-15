@@ -66,7 +66,7 @@ brave-devtools list_pages # Get a list of pages open in the browser
 brave-devtools navigate_page 1 --url "https://example.com" # Navigates the currently selected page to a URL
 brave-devtools navigate_page 1 --type "reload" --ignoreCache true # Reload page ignoring cache
 brave-devtools navigate_page 1 --url "https://example.com" --timeout 5000 # Navigate with a timeout
-brave-devtools navigate_page 1 --handleBeforeUnload "accept" # Handle before unload dialog
+brave-devtools navigate_page 1 --type "reload" --handleBeforeUnload "accept" # Handle before unload dialog
 brave-devtools navigate_page 1 --type "back" --initScript "foo()" # Navigate back and run an init script
 brave-devtools new_page "https://example.com" # Creates a new page
 brave-devtools new_page "https://example.com" --background true --timeout 5000 # Create new page in background
@@ -77,18 +77,20 @@ brave-devtools select_page 1 --bringToFront true # Select a page and bring it to
 
 ## Emulation
 
+Each `emulate` call replaces all previously configured emulation settings (except `--extraHttpHeaders`), so pass all desired settings in a single call.
+
 ```bash
-brave-devtools emulate 1 --networkConditions "Offline" # Emulate network conditions
-brave-devtools emulate 1 --cpuThrottlingRate 4 --geolocation "0x0" # Emulate CPU throttling and geolocation
-brave-devtools emulate 1 --colorScheme "dark" --viewport "1920x1080" # Emulate color scheme and viewport
-brave-devtools emulate 1 --userAgent "Mozilla/5.0..." # Emulate user agent
+brave-devtools emulate 1 --networkConditions "Offline" # Emulate network conditions (resets other settings)
+brave-devtools emulate 1 --cpuThrottlingRate 4 --geolocation "0,0" # Emulate CPU throttling and geolocation (resets other settings)
+brave-devtools emulate 1 --colorScheme "dark" --viewport "1920x1080" # Emulate color scheme and viewport (resets other settings)
+brave-devtools emulate 1 --userAgent "Mozilla/5.0..." # Emulate user agent (resets other settings)
 brave-devtools resize_page 1 1920 1080 # Resizes the selected page's window
 ```
 
 ## Performance
 
 ```bash
-brave-devtools performance_analyze_insight 1 "1" "LCPBreakdown" # Get more details on a specific Performance Insight (pageId, insightSetId, insightName)
+brave-devtools performance_analyze_insight 1 "NAVIGATION_0" "LCPBreakdown" # Get more details on a specific Performance Insight (pageId, insightSetId, insightName)
 brave-devtools performance_start_trace 1 --reload true --autoStop false # Starts a performance trace recording (reload, autoStop)
 brave-devtools performance_start_trace 1 --reload true --autoStop true --filePath "t.json.gz" # Start trace and save to a file
 brave-devtools performance_stop_trace 1 # Stops the active performance trace
@@ -106,8 +108,8 @@ brave-devtools take_heapsnapshot 1 "./snap.heapsnapshot" # Capture a memory heap
 ```bash
 brave-devtools get_heapsnapshot_summary "./snap.heapsnapshot" # Get snapshot summary stats
 brave-devtools compare_heapsnapshots "./base.heapsnapshot" "./target.heapsnapshot" # Compare two snapshots
-brave-devtools get_heapsnapshot_class_nodes "./snap.heapsnapshot" "Array" # Inspect class instances
-brave-devtools get_heapsnapshot_details "./snap.heapsnapshot" 123 # Detailed object properties
+brave-devtools get_heapsnapshot_details "./snap.heapsnapshot" # Snapshot statistics and per-class aggregates (with class IDs)
+brave-devtools get_heapsnapshot_class_nodes "./snap.heapsnapshot" 18 # Inspect instances of a class (class ID from get_heapsnapshot_details)
 brave-devtools get_heapsnapshot_dominators "./snap.heapsnapshot" 123 # Dominator tree for node
 brave-devtools get_heapsnapshot_duplicate_strings "./snap.heapsnapshot" # Find duplicated strings
 brave-devtools get_heapsnapshot_edges "./snap.heapsnapshot" 123 # Node edges/references
@@ -122,10 +124,10 @@ brave-devtools close_heapsnapshot "./snap.heapsnapshot" # Free memory from loade
 ```bash
 brave-devtools get_network_request 1 # Get the currently selected network request for page 1
 brave-devtools get_network_request 1 --reqid 1 --requestFilePath "req.md" # Get request by id and save to file
-brave-devtools get_network_request 1 --responseFilePath "res.md" # Save response body to file
+brave-devtools get_network_request 1 --reqid 1 --responseFilePath "res.md" # Save response body to file
 brave-devtools list_network_requests 1 # List all network requests for page 1
 brave-devtools list_network_requests 1 --pageSize 50 --pageIdx 0 # List network requests with pagination
-brave-devtools list_network_requests 1 --resourceTypes Fetch # Filter requests by resource type
+brave-devtools list_network_requests 1 --resourceTypes fetch # Filter requests by resource type
 brave-devtools list_network_requests 1 --includePreservedRequests true # Include preserved requests
 ```
 
@@ -150,6 +152,8 @@ brave-devtools take_screenshot 1 --fullPage true --format "jpeg" --quality 80 # 
 brave-devtools take_screenshot 1 --uid "id" --filePath "s.png" # Take a screenshot of an element
 brave-devtools take_snapshot 1 # Take a text snapshot of the page from the a11y tree
 brave-devtools take_snapshot 1 --verbose true --filePath "s.txt" # Take a verbose snapshot and save to file
+brave-devtools screencast_start 1 --filePath "screen.mp4" # Starts an mp4 screencast recording on page 1
+brave-devtools screencast_stop 1 # Stops the active screencast on page 1
 ```
 
 ## Extensions
@@ -165,7 +169,7 @@ brave-devtools trigger_extension_action "extension_id" # Triggers the default ac
 ## Progressive Web Apps (requires `--categoryPwa=true`)
 
 ```bash
-brave-devtools install_pwa "https://example.com/" # Install PWA by manifest ID or URL
+brave-devtools install_pwa "https://example.com/" "https://example.com/" # Install PWA by manifest ID and install URL
 brave-devtools launch_pwa "https://example.com/" # Launch installed PWA
 brave-devtools get_os_app_state "https://example.com/" # Get OS app installation state
 brave-devtools uninstall_pwa "https://example.com/" # Uninstall PWA and close windows
@@ -177,8 +181,6 @@ Experimental tools are disabled by default. Enable them with the corresponding f
 
 ```bash
 brave-devtools click_at 1 100 200 # Clicks at the provided coordinates on page 1 (requires --experimentalVision=true)
-brave-devtools screencast_start 1 --filePath "screen.mp4" # Starts a screencast recording on page 1 (requires --experimentalScreencast=true and ffmpeg)
-brave-devtools screencast_stop 1 # Stops the active screencast on page 1
 brave-devtools list_webmcp_tools 1 # List all WebMCP tools on page 1 (requires --categoryExperimentalWebmcp=true)
 brave-devtools execute_webmcp_tool 1 "tool_name" --input '{"arg":"val"}' # Execute a WebMCP tool on page 1 (requires --categoryExperimentalWebmcp=true)
 brave-devtools list_3p_developer_tools 1 # List third-party developer tools on page 1 (requires --categoryExperimentalThirdParty=true)

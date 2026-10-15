@@ -410,7 +410,8 @@
   },
   {
     "name": "experimental_screencast_fps_present",
-    "flagType": "boolean"
+    "flagType": "boolean",
+    "isDeprecated": true
   },
   {
     "name": "filesystem_root_present",
@@ -474,6 +475,10 @@
   },
   {
     "name": "file_navigations",
+    "flagType": "boolean"
+  },
+  {
+    "name": "screencast_fps_present",
     "flagType": "boolean"
   }
 ]

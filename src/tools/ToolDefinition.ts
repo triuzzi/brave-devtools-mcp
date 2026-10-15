@@ -7,7 +7,7 @@
 import type {ParsedArguments} from '../config/ConfigParser.js';
 import type {
   HeapSnapshotAggregateData,
-  HeapSnapshotClassDiff,
+  HeapSnapshotDiff,
   HeapSnapshotDetailedClassDiff,
   DuplicateStringGroup,
   HeapEdgesQueryOptions,
@@ -16,7 +16,10 @@ import type {
 import type {McpPage} from '../McpPage.js';
 import type {DevToolsCommentBridge} from '../devtools/DevToolsCommentBridge.js';
 import type {CssFormatterOptions} from '../formatters/CssFormatter.js';
-import type {ContextFilterOptions} from '../formatters/HeapSnapshotFormatter.js';
+import type {
+  ContextFilterOptions,
+  HeapSnapshotFormatOptions,
+} from '../formatters/HeapSnapshotFormatter.js';
 import {zod} from '../third_party/index.js';
 import type {
   Dialog,
@@ -27,20 +30,25 @@ import type {
   LaunchPWAOptions,
   PWAState,
   ScreenRecorder,
+  ScreenRecording,
   UninstallPWAOptions,
   Viewport,
   DevTools,
   Protocol,
   Page,
+  WebMCPTool,
 } from '../third_party/index.js';
 import type {InsightName, TraceResult} from '../processors/PerformanceTrace.js';
 import type {
   TextSnapshotNode,
   GeolocationOptions,
   CD4ACommentThread,
+  PaginationOptions,
+  ForcedColors,
+  PrefersContrast,
+  PrefersReducedMotion,
 } from '../types.js';
 import type {McpWorker} from '../McpWorker.js';
-import type {PaginationOptions} from '../types.js';
 import type {
   WaitForEventsResult,
   DialogAction,
@@ -86,8 +94,8 @@ export interface BaseToolDefinition<
     readOnlyHint: boolean;
     /**
      * If `'slim'` is included, the tool is only available with `--slim`. Tools
-     * without `'slim'` are only available without `--slim`. Slim tools may
-     * reuse the names of other tools, see {@link isAvailableInMode}.
+     * without `'slim'` are only available without `--slim`, see
+     * {@link isAvailableInMode}.
      */
     conditions?: Array<keyof ParsedArguments>;
   };
@@ -127,6 +135,34 @@ export interface SnapshotParams {
   filePath?: string;
 }
 
+export interface LighthouseAuditNode {
+  selector?: string;
+  snippet?: string;
+  nodeLabel?: string;
+  explanation?: string;
+}
+
+export interface LighthouseFailedAudit {
+  id: string;
+  title: string;
+  description?: string;
+  score: number;
+  displayValue?: string;
+  /**
+   * IDs of the categories that reference this audit.
+   */
+  categories: string[];
+  /**
+   * DOM nodes flagged by the audit, capped to a small number.
+   */
+  nodes: LighthouseAuditNode[];
+  /**
+   * Total number of distinct DOM nodes flagged by the audit, which may exceed
+   * the number of entries in `nodes`.
+   */
+  totalNodes: number;
+}
+
 export interface LighthouseData {
   summary: {
     mode: string;
@@ -145,6 +181,7 @@ export interface LighthouseData {
       total: number;
     };
   };
+  failedAudits: LighthouseFailedAudit[];
   reports: string[];
 }
 
@@ -157,38 +194,48 @@ export interface Response {
   appendResponseLine(value: string): void;
   setHeapSnapshotAggregates(
     aggregateData: HeapSnapshotAggregateData,
-    options?: PaginationOptions,
+    options?: PaginationOptions & HeapSnapshotFormatOptions,
   ): void;
   setHeapSnapshotStats(
     stats: DevTools.HeapSnapshotModel.HeapSnapshotModel.Statistics,
     staticData: DevTools.HeapSnapshotModel.HeapSnapshotModel.StaticData | null,
     nativeContextSizes: DevTools.HeapSnapshotModel.HeapSnapshotModel.NativeContextSizes,
     retainedByContextSummary: DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainedByContextSummary,
+    options?: HeapSnapshotFormatOptions,
   ): void;
   setHeapSnapshotNodes(
     nodes: DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange,
-    options?: PaginationOptions,
+    options?: PaginationOptions & HeapSnapshotFormatOptions,
   ): void;
   setHeapSnapshotDuplicateStrings(
     duplicateStrings: DuplicateStringGroup[],
-    options?: PaginationOptions,
+    options?: PaginationOptions & HeapSnapshotFormatOptions,
   ): void;
   setHeapSnapshotRetainingPaths(
     retainingPaths: DevTools.HeapSnapshotModel.HeapSnapshotModel.RetainingPaths,
+    options?: HeapSnapshotFormatOptions,
   ): void;
   setHeapSnapshotDominators(
     dominators: DevTools.HeapSnapshotModel.HeapSnapshotModel.DominatorChain,
+    options?: HeapSnapshotFormatOptions,
   ): void;
-  setHeapSnapshotClassDiffs(classDiffs: HeapSnapshotClassDiff[]): void;
+  setHeapSnapshotClassDiffs(
+    diff: HeapSnapshotDiff,
+    options?: PaginationOptions & HeapSnapshotFormatOptions,
+  ): void;
   setHeapSnapshotDetailedClassDiff(
     detailedClassDiff: HeapSnapshotDetailedClassDiff,
+    options?: HeapSnapshotFormatOptions,
   ): void;
   setHeapSnapshotObjectDetails(
     objectInfo: DevTools.HeapSnapshotModel.HeapSnapshotModel.ObjectInfo,
+    options?: HeapSnapshotFormatOptions,
   ): void;
   setHeapSnapshotContextAnalysis(
     analysis: DevTools.HeapSnapshotModel.HeapSnapshotModel.ContextAnalysisResult,
-    options?: PaginationOptions & ContextFilterOptions,
+    options?: PaginationOptions &
+      ContextFilterOptions &
+      HeapSnapshotFormatOptions,
   ): void;
   setIncludePages(value: boolean): void;
   setIncludeNetworkRequests(
@@ -251,6 +298,11 @@ export type SupportedExtensions =
 /**
  * Only add methods used by tools/*.
  */
+export interface ScreenRecorderData {
+  recorder: ScreenRecorder | ScreenRecording;
+  filePath: string;
+}
+
 export type Context = Readonly<{
   installPWA(options: InstallPWAOptions): Promise<string>;
   uninstallPWA(options: UninstallPWAOptions): Promise<void>;
@@ -283,10 +335,6 @@ export type Context = Readonly<{
   ): Promise<{filename: string}>;
   loadResource(path: string): Promise<string>;
 
-  getScreenRecorder(): {recorder: ScreenRecorder; filePath: string} | null;
-  setScreenRecorder(
-    data: {recorder: ScreenRecorder; filePath: string} | null,
-  ): void;
   installExtension(path: string): Promise<string>;
   uninstallExtension(id: string): Promise<void>;
   triggerExtensionAction(id: string): Promise<void>;
@@ -352,7 +400,7 @@ export type Context = Readonly<{
   getHeapSnapshotClassDiffs(
     baseFilePath: string,
     currentFilePath: string,
-  ): Promise<HeapSnapshotClassDiff[]>;
+  ): Promise<HeapSnapshotDiff>;
   getHeapSnapshotDetailedClassDiff(
     baseFilePath: string,
     currentFilePath: string,
@@ -391,6 +439,8 @@ export type ContextPage = Readonly<{
   getDialog(): Dialog | undefined;
   clearDialog(): void;
   throwIfDialogOpen(): void;
+  getScreenRecorder(): ScreenRecorderData | null;
+  setScreenRecorder(data: ScreenRecorderData | null): void;
   waitForEventsAfterAction(
     action: (signal: AbortSignal) => Promise<unknown>,
     options?: {
@@ -400,6 +450,7 @@ export type ContextPage = Readonly<{
         DialogAction | Partial<Record<Protocol.Page.DialogType, DialogAction>>;
     },
   ): Promise<WaitForEventsResult>;
+  getWebMcpTools(): WebMCPTool[];
   getThirdPartyDeveloperTools(): ToolGroups;
 
   executeThirdPartyDeveloperTool(
@@ -415,6 +466,9 @@ export type ContextPage = Readonly<{
     geolocation?: GeolocationOptions;
     userAgent?: string;
     colorScheme?: 'dark' | 'light' | 'auto';
+    forcedColors?: ForcedColors | 'auto';
+    prefersContrast?: PrefersContrast | 'auto';
+    prefersReducedMotion?: PrefersReducedMotion | 'auto';
     viewport?: Viewport;
   }): Promise<void>;
   waitForTextOnPage(text: string[], timeout?: number): Promise<Element>;
@@ -422,7 +476,7 @@ export type ContextPage = Readonly<{
   openDevTools(): Promise<Page | undefined>;
   ensureDevToolsCommentBridge(
     devtoolsPage: Page,
-  ): Promise<DevToolsCommentBridge>;
+  ): Promise<DevToolsCommentBridge | undefined>;
 }>;
 
 export function defineTool<Schema extends zod.ZodRawShape>(
@@ -529,13 +583,15 @@ export function viewportTransform(arg: string | undefined):
     width,
     height,
     deviceScaleFactor: dpr,
-    isMobile: isMobile,
-    isLandscape: isLandscape,
-    hasTouch: hasTouch,
+    isMobile,
+    isLandscape,
+    hasTouch,
   };
 }
 
-export function geolocationTransform(arg: string | undefined) {
+export function geolocationTransform(
+  arg: string | undefined,
+): {latitude: number; longitude: number} | undefined {
   if (!arg) {
     return undefined;
   }
@@ -563,10 +619,8 @@ export function isSlimTool(
 }
 
 /**
- * Slim mode replaces the regular tools with the slim tools. Only the tools of
- * the current mode are registered, so a slim tool may share its name with a
- * regular tool. `--slim` requires a restart, so the mode never changes while
- * the server is running.
+ * Slim mode replaces the regular tools with the slim tools. `--slim` requires
+ * a restart, so the mode never changes while the server is running.
  */
 export function isAvailableInMode(
   tool: Pick<BaseToolDefinition, 'annotations'>,
