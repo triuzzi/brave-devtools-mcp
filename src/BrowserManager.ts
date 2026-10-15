@@ -17,23 +17,35 @@ import {isAllowedUrl} from './utils/url.js';
 
 type Channel = NonNullable<ParsedArguments['channel']>;
 
+// Node runs a timer whose delay exceeds 2^31-1 ms after 1 ms instead, which
+// would make every CDP call and tool call time out at once.
+const MAXIMUM_TIMER_DELAY_MILLISECONDS = 2_147_483_647;
+
+export function parseProtocolTimeoutMilliseconds(
+  rawValue: string | undefined,
+): number {
+  const timeoutMilliseconds = Number(rawValue ?? '600000');
+  if (
+    !Number.isSafeInteger(timeoutMilliseconds) ||
+    timeoutMilliseconds <= 0 ||
+    timeoutMilliseconds > MAXIMUM_TIMER_DELAY_MILLISECONDS
+  ) {
+    throw new Error(
+      `BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer no greater than ${MAXIMUM_TIMER_DELAY_MILLISECONDS}.`,
+    );
+  }
+  return timeoutMilliseconds;
+}
+
 // Heavy pages (e.g. Studio module dev bundles >100MB) cannot ack
 // `Network.enable` and other auto-attached domain calls within
 // puppeteer's default 180s. Once that fires, the CDP connection is
 // marked dead and every subsequent call throws — only daemon restart
 // recovers. Bumping the ceiling to 10min covers realistic loads;
 // override via env for power users.
-export const PROTOCOL_TIMEOUT_MILLISECONDS = Number(
-  process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS ?? '600000',
+export const PROTOCOL_TIMEOUT_MILLISECONDS = parseProtocolTimeoutMilliseconds(
+  process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS,
 );
-if (
-  !Number.isSafeInteger(PROTOCOL_TIMEOUT_MILLISECONDS) ||
-  PROTOCOL_TIMEOUT_MILLISECONDS <= 0
-) {
-  throw new Error(
-    'BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer.',
-  );
-}
 
 export function resolveBraveExecutablePath(
   channel: Channel = 'release',

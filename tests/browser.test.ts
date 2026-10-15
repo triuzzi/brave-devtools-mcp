@@ -15,6 +15,7 @@ import sinon from 'sinon';
 
 import {
   BrowserManager,
+  parseProtocolTimeoutMilliseconds,
   PROTOCOL_TIMEOUT_MILLISECONDS,
   resolveBraveExecutablePath,
   resolveBraveUserDataDirectory,
@@ -801,6 +802,29 @@ describe('browser', () => {
         ),
       );
     });
+  });
+
+  describe('protocol timeout', () => {
+    it('defaults to 10 minutes', () => {
+      assert.strictEqual(parseProtocolTimeoutMilliseconds(undefined), 600_000);
+    });
+
+    it('accepts positive integers up to the Node timer limit', () => {
+      assert.strictEqual(parseProtocolTimeoutMilliseconds('1'), 1);
+      assert.strictEqual(
+        parseProtocolTimeoutMilliseconds('2147483647'),
+        2_147_483_647,
+      );
+    });
+
+    for (const rawValue of ['', '0', '-1', '1.5', 'ten', '2147483648']) {
+      it(`rejects ${JSON.stringify(rawValue)}`, () => {
+        assert.throws(
+          () => parseProtocolTimeoutMilliseconds(rawValue),
+          /BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer no greater than 2147483647\./,
+        );
+      });
+    }
   });
 
   describe('rootSandboxLaunchError', () => {
