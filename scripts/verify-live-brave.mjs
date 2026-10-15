@@ -86,6 +86,8 @@ try {
     'press_key',
     'query_heapsnapshot_objects',
     'resize_page',
+    'screencast_start',
+    'screencast_stop',
     'select_page',
     'take_heapsnapshot',
     'take_screenshot',

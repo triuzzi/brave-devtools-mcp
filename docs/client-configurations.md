@@ -6,7 +6,8 @@ When adding a new client configuration, make sure to add it in alphabetical orde
 
 <details>
   <summary>Amp</summary>
-  Follow https://ampcode.com/manual#mcp and use the config provided above. You can also install the Brave DevTools MCP server using the CLI:
+
+Follow https://ampcode.com/manual#mcp and use the [standard config][standard-config]. You can also install the Brave DevTools MCP server using the CLI:
 
 ```bash
 amp mcp add brave-devtools -- npx brave-mcp@latest
@@ -95,13 +96,16 @@ Restart Claude Code to have the MCP server and skills load (check with `/skills`
 
 <details>
   <summary>Cline</summary>
-  Follow https://docs.cline.bot/mcp/configuring-mcp-servers and use the config provided above.
+
+Follow https://docs.cline.bot/mcp/configuring-mcp-servers and use the [standard config][standard-config].
+
 </details>
 
 <details>
   <summary>Codex</summary>
-  Follow the <a href="https://developers.openai.com/codex/mcp/#configure-with-the-cli">configure MCP guide</a>
-  using the standard config from above. You can also install the Brave DevTools MCP server using the Codex CLI:
+
+Follow the <a href="https://developers.openai.com/codex/mcp/#configure-with-the-cli">configure MCP guide</a>
+using the [standard config][standard-config]. You can also install the Brave DevTools MCP server using the Codex CLI:
 
 ```bash
 codex mcp add brave-devtools -- npx brave-mcp@latest
@@ -187,7 +191,7 @@ That's it! Your agent is now supercharged with Brave DevTools capabilities.
 
 **Or install manually:**
 
-Follow the VS Code [MCP configuration guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server) using the standard config from above, or use the CLI:
+Follow the VS Code [MCP configuration guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server) using the [standard config][standard-config], or use the CLI:
 
 For macOS and Linux:
 
@@ -212,7 +216,7 @@ code --add-mcp '{"""name""":"""io.github.triuzzi/brave-devtools-mcp""","""comman
 
 **Or install manually:**
 
-Go to `Cursor Settings` -> `MCP` -> `New MCP Server`. Use the config provided above.
+Go to `Cursor Settings` -> `MCP` -> `New MCP Server`. Use the [standard config][standard-config].
 
 </details>
 
@@ -274,14 +278,16 @@ gemini extensions install --auto-update https://github.com/triuzzi/brave-devtool
 gemini mcp add -s user brave-devtools npx brave-mcp@latest
 ```
 
-Alternatively, follow the <a href="https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md#how-to-set-up-your-mcp-server">MCP guide</a> and use the standard config from above.
+Alternatively, follow the <a href="https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md#how-to-set-up-your-mcp-server">MCP guide</a> and use the [standard config][standard-config].
 
 </details>
 
 <details>
   <summary>Gemini Code Assist</summary>
-  Follow the <a href="https://cloud.google.com/gemini/docs/codeassist/use-agentic-chat-pair-programmer#configure-mcp-servers">configure MCP guide</a>
-  using the standard config from above.
+
+Follow the <a href="https://cloud.google.com/gemini/docs/codeassist/use-agentic-chat-pair-programmer#configure-mcp-servers">configure MCP guide</a>
+using the [standard config][standard-config].
+
 </details>
 
 <details>
@@ -297,17 +303,17 @@ See the <a href="https://docs.x.ai/build/features/skills-plugins-marketplaces">d
 <details>
   <summary>JetBrains AI Assistant & Junie</summary>
 
-Go to `Settings | Tools | AI Assistant | Model Context Protocol (MCP)` -> `Add`. Use the config provided above.
-The same way brave-mcp can be configured for JetBrains Junie in `Settings | Tools | Junie | MCP Settings` -> `Add`. Use the config provided above.
+Go to `Settings | Tools | AI Assistant | Model Context Protocol (MCP)` -> `Add`. Use the [standard config][standard-config].
+The same way brave-mcp can be configured for JetBrains Junie in `Settings | Tools | Junie | MCP Settings` -> `Add`. Use the [standard config][standard-config].
 
 </details>
 
 <details>
   <summary>Kiro</summary>
 
-In **Kiro Settings**, go to `Configure MCP` > `Open Workspace or User MCP Config` > Use the configuration snippet provided above.
+In **Kiro Settings**, go to `Configure MCP` > `Open Workspace or User MCP Config` > Use the [standard config][standard-config].
 
-Or, from the IDE **Activity Bar** > `Kiro` > `MCP Servers` > `Click Open MCP Config`. Use the configuration snippet provided above.
+Or, from the IDE **Activity Bar** > `Kiro` > `MCP Servers` > `Click Open MCP Config`. Use the [standard config][standard-config].
 
 </details>
 
@@ -372,9 +378,9 @@ Add the following configuration to your `opencode.json` file. If you don't have 
 <details>
   <summary>Qoder</summary>
 
-In **Qoder Settings**, go to `MCP Server` > `+ Add` > Use the configuration snippet provided above.
+In **Qoder Settings**, go to `MCP Server` > `+ Add` > Use the [standard config][standard-config].
 
-Alternatively, follow the <a href="https://docs.qoder.com/user-guide/chat/model-context-protocol">MCP guide</a> and use the standard config from above.
+Alternatively, follow the <a href="https://docs.qoder.com/user-guide/chat/model-context-protocol">MCP guide</a> and use the [standard config][standard-config].
 
 </details>
 
@@ -409,12 +415,16 @@ qodercli mcp add -s user brave-devtools -- npx brave-mcp@latest
 <details>
   <summary>Warp</summary>
 
-Go to `Settings | AI | Manage MCP Servers` -> `+ Add` to [add an MCP Server](https://docs.warp.dev/knowledge-and-collaboration/mcp#adding-an-mcp-server). Use the config provided above.
+Go to `Settings | AI | Manage MCP Servers` -> `+ Add` to [add an MCP Server](https://docs.warp.dev/knowledge-and-collaboration/mcp#adding-an-mcp-server). Use the [standard config][standard-config].
 
 </details>
 
 <details>
   <summary>Windsurf</summary>
-  Follow the <a href="https://docs.windsurf.com/windsurf/cascade/mcp#mcp-config-json">configure MCP guide</a>
-  using the standard config from above.
+
+Follow the <a href="https://docs.windsurf.com/windsurf/cascade/mcp#mcp-config-json">configure MCP guide</a>
+using the [standard config][standard-config].
+
 </details>
+
+[standard-config]: https://github.com/triuzzi/brave-devtools-mcp#getting-started

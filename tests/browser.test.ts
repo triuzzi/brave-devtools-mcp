@@ -15,6 +15,7 @@ import sinon from 'sinon';
 
 import {
   BrowserManager,
+  parseProtocolTimeoutMilliseconds,
   PROTOCOL_TIMEOUT_MILLISECONDS,
   resolveBraveExecutablePath,
   resolveBraveUserDataDirectory,
@@ -24,6 +25,7 @@ import {puppeteer, type Browser} from '../src/third_party/index.js';
 import {
   createMockParsedArguments,
   createMockPuppeteerBrowser,
+  createMockPuppeteerTarget,
 } from './mocks.js';
 import {serverHooks} from './server.js';
 import {createTempDir} from './utils.js';
@@ -63,7 +65,7 @@ async function runWithRetry(fn: () => Promise<void>) {
       await new Promise(r => setTimeout(r, 500));
     }
   }
-  throw lastError;
+  throw lastError ?? new Error('Failed without an error');
 }
 
 describe('browser', () => {
@@ -225,6 +227,47 @@ describe('browser', () => {
       });
     });
 
+    it('enables WebSocket keep-alive and passes wsHeaders when connecting', async () => {
+      const connectStub = sinon
+        .stub(puppeteer, 'connect')
+        .resolves(createMockPuppeteerBrowser());
+
+      const args = createMockParsedArguments({
+        wsEndpoint: 'ws://127.0.0.1:9222/devtools/browser/abc',
+        wsHeaders: {Authorization: 'Bearer token'},
+      });
+      await new BrowserManager(args).ensureBrowser();
+
+      sinon.assert.calledWithMatch(connectStub, {
+        browserWSEndpoint: 'ws://127.0.0.1:9222/devtools/browser/abc',
+        wsOptions: {
+          keepAlive: true,
+          headers: {Authorization: 'Bearer token'},
+        },
+      });
+    });
+
+    for (const categoryExtensions of [false, true]) {
+      it(`${categoryExtensions ? 'keeps' : 'drops'} extension targets when connecting with categoryExtensions=${categoryExtensions}`, async () => {
+        const connectStub = sinon
+          .stub(puppeteer, 'connect')
+          .resolves(createMockPuppeteerBrowser());
+
+        const args = createMockParsedArguments({
+          browserUrl: 'http://127.0.0.1:9222',
+          categoryExtensions,
+        });
+        await new BrowserManager(args).ensureBrowser();
+
+        const {targetFilter} = connectStub.firstCall.args[0];
+        assert.ok(targetFilter);
+        const target = createMockPuppeteerTarget({
+          url: 'chrome-extension://abcdefgh/popup.html',
+        });
+        assert.strictEqual(targetFilter(target), categoryExtensions);
+      });
+    }
+
     it('deduplicates concurrent ensureBrowser() calls while launch is in-flight', async () => {
       const pptrBrowser = createMockPuppeteerBrowser();
       const {promise, resolve} = Promise.withResolvers<Browser>();
@@ -379,56 +422,6 @@ describe('browser', () => {
       sinon.assert.calledOnceWithExactly(pptrBrowser.close);
     });
 
-    describe('forget', () => {
-      it('does nothing when the candidate is not the current browser', async () => {
-        const pptrBrowser = createMockPuppeteerBrowser();
-        const other = createMockPuppeteerBrowser();
-        sinon.stub(puppeteer, 'launch').resolves(pptrBrowser);
-
-        const manager = new BrowserManager(
-          createMockParsedArguments({headless: true, isolated: true}),
-        );
-        await manager.ensureBrowser();
-
-        manager.forget(other);
-
-        sinon.assert.notCalled(other.close);
-        sinon.assert.notCalled(other.disconnect);
-        sinon.assert.notCalled(pptrBrowser.close);
-        sinon.assert.notCalled(pptrBrowser.disconnect);
-      });
-
-      it('disconnects the current browser when it was connected', async () => {
-        const pptrBrowser = createMockPuppeteerBrowser();
-        sinon.stub(puppeteer, 'connect').resolves(pptrBrowser);
-
-        const manager = new BrowserManager(
-          createMockParsedArguments({browserUrl: 'http://127.0.0.1:9222'}),
-        );
-        const browser = await manager.ensureBrowser();
-
-        manager.forget(browser);
-
-        sinon.assert.calledOnceWithExactly(pptrBrowser.disconnect);
-        sinon.assert.notCalled(pptrBrowser.close);
-      });
-
-      it('closes the current browser when it was launched', async () => {
-        const pptrBrowser = createMockPuppeteerBrowser();
-        sinon.stub(puppeteer, 'launch').resolves(pptrBrowser);
-
-        const manager = new BrowserManager(
-          createMockParsedArguments({headless: true, isolated: true}),
-        );
-        const browser = await manager.ensureBrowser();
-
-        manager.forget(browser);
-
-        sinon.assert.calledOnceWithExactly(pptrBrowser.close);
-        sinon.assert.notCalled(pptrBrowser.disconnect);
-      });
-    });
-
     describe('push-based disconnect eviction', () => {
       it('proactively evicts a disconnected browser without waiting for a lazy connected check', async () => {
         const firstBrowser = createMockPuppeteerBrowser();
@@ -487,6 +480,33 @@ describe('browser', () => {
         const third = await manager.ensureBrowser();
         assert.strictEqual(third, newBrowser);
         sinon.assert.calledTwice(launchStub);
+      });
+
+      it('disconnects an already-cached connected browser when abandoned', async () => {
+        const firstBrowser = createMockPuppeteerBrowser();
+        const secondBrowser = createMockPuppeteerBrowser();
+        const connectStub = sinon
+          .stub(puppeteer, 'connect')
+          .onFirstCall()
+          .resolves(firstBrowser)
+          .onSecondCall()
+          .resolves(secondBrowser);
+
+        const manager = new BrowserManager(
+          createMockParsedArguments({browserUrl: 'http://127.0.0.1:9222'}),
+        );
+
+        const first = await manager.ensureBrowser();
+        assert.strictEqual(first, firstBrowser);
+
+        manager.abandonPendingAttempt();
+
+        sinon.assert.calledOnceWithExactly(firstBrowser.disconnect);
+        sinon.assert.notCalled(firstBrowser.close);
+
+        const second = await manager.ensureBrowser();
+        assert.strictEqual(second, secondBrowser);
+        sinon.assert.calledTwice(connectStub);
       });
     });
 
@@ -782,6 +802,29 @@ describe('browser', () => {
         ),
       );
     });
+  });
+
+  describe('protocol timeout', () => {
+    it('defaults to 10 minutes', () => {
+      assert.strictEqual(parseProtocolTimeoutMilliseconds(undefined), 600_000);
+    });
+
+    it('accepts positive integers up to the Node timer limit', () => {
+      assert.strictEqual(parseProtocolTimeoutMilliseconds('1'), 1);
+      assert.strictEqual(
+        parseProtocolTimeoutMilliseconds('2147483647'),
+        2_147_483_647,
+      );
+    });
+
+    for (const rawValue of ['', '0', '-1', '1.5', 'ten', '2147483648']) {
+      it(`rejects ${JSON.stringify(rawValue)}`, () => {
+        assert.throws(
+          () => parseProtocolTimeoutMilliseconds(rawValue),
+          /BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer no greater than 2147483647\./,
+        );
+      });
+    }
   });
 
   describe('rootSandboxLaunchError', () => {

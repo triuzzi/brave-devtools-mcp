@@ -29,9 +29,8 @@ function isFile(filePath: string): boolean {
  * wins, config files are not merged.
  *
  * Locations, from highest to lowest priority:
- * 1. `${CWD}/bd4a.config.json`
- * 2. `${PLUGIN_DATA}/bd4a.config.json`
- * 3. The global config: `$XDG_CONFIG_HOME/bd4a/config.json` on macOS and
+ * 1. `${PLUGIN_DATA}/bd4a.config.json`
+ * 2. The global config: `$XDG_CONFIG_HOME/bd4a/config.json` on macOS and
  *    Linux, `%LOCALAPPDATA%/bd4a/config.json` on Windows, with a fallback to
  *    `~/.config/bd4a/config.json`.
  *
@@ -40,8 +39,8 @@ function isFile(filePath: string): boolean {
  * `BRAVE_DEVTOOLS_MCP_NO_CONFIG_DISCOVERY` env variable is set.
  */
 export class ConfigLocator {
-  getSearchPaths(cwd = process.cwd(), env = process.env): string[] {
-    const searchPaths = [path.join(cwd, CONFIG_FILE_NAME)];
+  getSearchPaths(env = process.env): string[] {
+    const searchPaths: string[] = [];
     const pluginData = env['PLUGIN_DATA'];
     if (pluginData) {
       searchPaths.push(path.join(pluginData, CONFIG_FILE_NAME));
@@ -74,8 +73,6 @@ export class ConfigLocator {
     if (env[NO_CONFIG_DISCOVERY_ENV]) {
       return undefined;
     }
-    return this.getSearchPaths(undefined, env).find(filePath =>
-      checkIsFile(filePath),
-    );
+    return this.getSearchPaths(env).find(filePath => checkIsFile(filePath));
   }
 }

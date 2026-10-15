@@ -10,10 +10,10 @@ import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 import {overrideDevToolsGlobals} from './devtools/DevtoolsUtils.js';
-import {HeapSnapshotManager} from './processors/HeapSnapshotManager.js';
 import type {
+  HeapSnapshotManager,
   HeapSnapshotAggregateData,
-  HeapSnapshotClassDiff,
+  HeapSnapshotDiff,
   HeapSnapshotDetailedClassDiff,
   DuplicateStringGroup,
   HeapEdgesQueryOptions,
@@ -26,13 +26,14 @@ import {
   Locator,
   type Browser,
   type BrowserContext,
+  type Connection,
   type ConsoleMessage,
   type GetPWAStateOptions,
   type InstallPWAOptions,
   type LaunchPWAOptions,
   type Page,
+  type Protocol,
   type PWAState,
-  type ScreenRecorder,
   type Target,
   type UninstallPWAOptions,
   type Extension,
@@ -65,8 +66,9 @@ interface McpContextOptions {
   // The block list of URL patterns to block loading resources.
   blocklist?: string[];
   // Whether to skip path validation when the client did not negotiate the roots
-  // capability. When false (default), file-writing tools are restricted to the
-  // OS temp directory. When true, the previous permissive behavior is restored.
+  // capability. When false (default), tools that read or write local files are
+  // restricted to the OS temp directory. When true, the previous permissive
+  // behavior is restored.
   allowUnrestrictedPaths?: boolean;
   // Whether this context replaces a previous one after a browser reconnect.
   // Surfaces a one-time note in the next response.
@@ -77,6 +79,8 @@ interface McpContextOptions {
   categoryExtensions?: boolean;
   // Callback when a notification should be emitted to MCP client.
   onNotification?: (message: string) => void;
+  // Shared heap snapshot manager to preserve loaded snapshots across browser reconnects.
+  heapSnapshotManager: HeapSnapshotManager;
 }
 
 // Page ids are handed out from a process-wide counter so they stay unique
@@ -105,8 +109,6 @@ export class McpContext implements Context {
   #serviceWorkerConsoleCollector: ServiceWorkerConsoleCollector;
 
   #isRunningTrace = false;
-  #screenRecorderData: {recorder: ScreenRecorder; filePath: string} | null =
-    null;
 
   #reconnectNotice = false;
 
@@ -114,7 +116,7 @@ export class McpContext implements Context {
 
   #locatorClass: typeof Locator;
   #options: McpContextOptions;
-  #heapSnapshotManager = new HeapSnapshotManager();
+  #heapSnapshotManager: HeapSnapshotManager;
   #roots: Root[] | undefined = undefined;
   #allowUnrestrictedPaths: boolean;
 
@@ -134,6 +136,7 @@ export class McpContext implements Context {
     this.logger = logger;
     this.#locatorClass = locatorClass;
     this.#options = options;
+    this.#heapSnapshotManager = options.heapSnapshotManager;
     this.#allowUnrestrictedPaths = options.allowUnrestrictedPaths ?? false;
     this.#reconnectNotice = options.reconnected ?? false;
 
@@ -142,7 +145,7 @@ export class McpContext implements Context {
     );
   }
 
-  async #init() {
+  async #init(): Promise<void> {
     await this.createPagesSnapshot();
     const workers = this.createWorkersSnapshot();
 
@@ -151,12 +154,11 @@ export class McpContext implements Context {
     this.browser.on('targetdestroyed', this.#onTargetDestroyed);
   }
 
-  dispose() {
+  dispose(): void {
     this.browser.off('targetcreated', this.#onTargetCreated);
     this.browser.off('targetdestroyed', this.#onTargetDestroyed);
 
     this.#serviceWorkerConsoleCollector.dispose();
-    this.#heapSnapshotManager.dispose();
     for (const mcpPage of this.#mcpPages.values()) {
       mcpPage.dispose();
     }
@@ -169,7 +171,7 @@ export class McpContext implements Context {
     this.#isolatedContexts.clear();
   }
 
-  #onTargetCreated = (target: Target) => {
+  #onTargetCreated = (target: Target): void => {
     try {
       if (!this.#isPageTarget(target)) {
         return;
@@ -180,7 +182,7 @@ export class McpContext implements Context {
     }
   };
 
-  #onTargetDestroyed = (target: Target) => {
+  #onTargetDestroyed = (target: Target): void => {
     try {
       const mcpPage = this.#mcpPages.get(target);
       if (mcpPage) {
@@ -199,7 +201,7 @@ export class McpContext implements Context {
     opts: McpContextOptions,
     /* Let tests use unbundled Locator class to avoid overly strict checks within puppeteer that fail when mixing bundled and unbundled class instances */
     locatorClass: typeof Locator = Locator,
-  ) {
+  ): Promise<McpContext> {
     const context = new McpContext(browser, logger, opts, locatorClass);
     await context.#init();
     return context;
@@ -345,10 +347,10 @@ export class McpContext implements Context {
     return mcpPage;
   }
   async closePage(pageId: number): Promise<void> {
+    const page = this.getPageById(pageId);
     if (this.#mcpPages.size === 1) {
       throw new Error(CLOSE_PAGE_ERROR);
     }
-    const page = this.getPageById(pageId);
     this.#mcpPages.delete(page.target);
     await page.close();
   }
@@ -401,22 +403,30 @@ export class McpContext implements Context {
     return this.#isRunningTrace;
   }
 
-  getScreenRecorder(): {recorder: ScreenRecorder; filePath: string} | null {
-    return this.#screenRecorderData;
-  }
-
-  setScreenRecorder(
-    data: {recorder: ScreenRecorder; filePath: string} | null,
-  ): void {
-    this.#screenRecorderData = data;
-  }
-
   isCruxEnabled(): boolean {
     return this.#options.performanceCrux;
   }
 
   getPages(): McpPage[] {
     return Array.from(this.#mcpPages.values());
+  }
+
+  /**
+   * Fetches current target info for all targets from the browser, keyed by
+   * target id. Unlike Puppeteer's cached target info, this reflects title
+   * changes, which Chrome does not report via `Target.targetInfoChanged`.
+   * Returns an empty map if the browser cannot be queried.
+   */
+  async getTargetInfos(): Promise<Map<string, Protocol.Target.TargetInfo>> {
+    try {
+      // @ts-expect-error use existing browser connection (internal Puppeteer API).
+      const connection: Connection = this.browser._connection;
+      const {targetInfos} = await connection.send('Target.getTargets');
+      return new Map(targetInfos.map(info => [info.targetId, info]));
+    } catch (err) {
+      this.logger?.('Failed to fetch target infos', err);
+      return new Map();
+    }
   }
 
   getSelectedMcpPage(): McpPage {
@@ -452,7 +462,7 @@ export class McpContext implements Context {
     if (!targetPage) {
       return undefined;
     }
-    let timeoutId: ReturnType<typeof setTimeout>;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<undefined>(resolve => {
       timeoutId = setTimeout(() => resolve(undefined), 500);
     });
@@ -462,7 +472,7 @@ export class McpContext implements Context {
     } catch {
       return undefined;
     } finally {
-      clearTimeout(timeoutId!);
+      clearTimeout(timeoutId);
     }
   }
 
@@ -867,11 +877,7 @@ export class McpContext implements Context {
   }
 
   async closeHeapSnapshot(filePath: string): Promise<boolean> {
-    return this.#heapSnapshotManager.disposeSnapshot(filePath);
-  }
-
-  hasHeapSnapshots(): boolean {
-    return this.#heapSnapshotManager.hasSnapshots();
+    return await this.#heapSnapshotManager.disposeSnapshot(filePath);
   }
 
   async getHeapSnapshotRetainingPaths(
@@ -922,6 +928,39 @@ export class McpContext implements Context {
     throw new Error(`Not allowed by allowlist: ${url}`);
   }
 
+  async #loadNetworkResource(url: URL): Promise<string> {
+    const redirectStatuses = new Set([301, 302, 303, 307, 308]);
+    const maxRedirects = 20;
+    let currentUrl = url;
+
+    for (let redirectCount = 0; ; redirectCount++) {
+      this.#validateUrlNotBlocked(currentUrl);
+      this.#validateUrlAllowed(currentUrl);
+
+      const response = await fetch(currentUrl, {redirect: 'manual'});
+      if (!redirectStatuses.has(response.status)) {
+        if (!response.ok) {
+          throw new Error(`Failed to load resource: ${currentUrl}`);
+        }
+        return await response.text();
+      }
+
+      const location = response.headers.get('location');
+      if (!location) {
+        throw new Error(`Failed to load resource: ${currentUrl}`);
+      }
+      if (redirectCount >= maxRedirects) {
+        throw new Error(`Too many redirects loading resource: ${url}`);
+      }
+
+      await response.body?.cancel();
+      currentUrl = new URL(location, currentUrl);
+      if (currentUrl.protocol !== 'https:' && currentUrl.protocol !== 'http:') {
+        throw new Error(`Unsupported protocol for: ${currentUrl}`);
+      }
+    }
+  }
+
   async loadResource(path: string): Promise<string> {
     const url = new URL(path);
 
@@ -930,13 +969,7 @@ export class McpContext implements Context {
     switch (url.protocol) {
       case 'https:':
       case 'http:': {
-        this.#validateUrlAllowed(url);
-
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Failed to load resource: ${url}`);
-        }
-        return response.text();
+        return await this.#loadNetworkResource(url);
       }
 
       case 'file:': {
@@ -960,7 +993,7 @@ export class McpContext implements Context {
   async getHeapSnapshotClassDiffs(
     baseFilePath: string,
     currentFilePath: string,
-  ): Promise<HeapSnapshotClassDiff[]> {
+  ): Promise<HeapSnapshotDiff> {
     return await this.#heapSnapshotManager.getClassDiffs(
       baseFilePath,
       currentFilePath,

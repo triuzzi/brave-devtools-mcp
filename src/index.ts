@@ -12,6 +12,7 @@ import {BrowserManager} from './BrowserManager.js';
 import {type ParsedArguments} from './config/ConfigParser.js';
 import {loadIssueDescriptions} from './devtools/issueDescriptions.js';
 import {McpContext} from './McpContext.js';
+import {HeapSnapshotManager} from './processors/HeapSnapshotManager.js';
 import {ClearcutLogger} from './telemetry/ClearcutLogger.js';
 import {FilePersistence} from './telemetry/persistence.js';
 import {
@@ -26,7 +27,6 @@ import {
 import {ToolHandler} from './ToolHandler.js';
 import {
   type DefinedPageTool,
-  isAvailableInMode,
   type ToolDefinition,
 } from './tools/ToolDefinition.js';
 import {createTools} from './tools/tools.js';
@@ -60,6 +60,7 @@ export class McpServer {
   #serverArgs: ParsedArguments;
   #browserManager: BrowserManager;
   #context?: McpContext;
+  #heapSnapshotManager = new HeapSnapshotManager();
 
   /**
    * Client roots stay valid across browser reconnects and only the client can
@@ -122,7 +123,7 @@ export class McpServer {
       ) {
         console.warn(
           '[brave-devtools-mcp] The connecting client did not negotiate the MCP roots ' +
-            'capability. File-writing tools will be restricted to the OS temp directory. ' +
+            'capability. Tools that read or write local files will be restricted to the OS temp directory. ' +
             'To restore the previous unrestricted behavior, start the server with ' +
             '--allow-unrestricted-paths.',
         );
@@ -182,6 +183,7 @@ export class McpServer {
     } finally {
       this.#context = undefined;
     }
+    this.#heapSnapshotManager.dispose();
     await Promise.allSettled([
       this.#browserManager.close(),
       this.server.close(),
@@ -209,10 +211,7 @@ export class McpServer {
 
   async #init(): Promise<void> {
     for (const tool of createTools(this.#serverArgs)) {
-      // Slim and regular tools may share names, only register the current mode.
-      if (isAvailableInMode(tool, this.#serverArgs)) {
-        this.#registerTool(tool);
-      }
+      this.#registerTool(tool);
     }
     await loadIssueDescriptions();
   }
@@ -274,6 +273,7 @@ export class McpServer {
         // Surfaces a one-time note in the next response after a reconnect.
         reconnected: this.#context !== undefined,
         categoryExtensions: this.#serverArgs.categoryExtensions,
+        heapSnapshotManager: this.#heapSnapshotManager,
         onNotification: (message: string) => {
           void this.server
             .sendLoggingMessage({
@@ -305,7 +305,6 @@ export class McpServer {
       this.#serverArgs,
       () => this.#getContext(),
       this.#toolMutex,
-      browser => this.#browserManager.forget(browser),
       () => this.#browserManager.abandonPendingAttempt(),
     );
   }
@@ -354,7 +353,7 @@ export async function createMcpServer(
   return {server: server.server};
 }
 
-export const logDisclaimers = (args: ParsedArguments) => {
+export const logDisclaimers = (args: ParsedArguments): void => {
   console.error(
     `brave-devtools-mcp exposes content of the browser instance to MCP clients, allowing them to inspect,
 debug, and modify any data in the browser or DevTools.

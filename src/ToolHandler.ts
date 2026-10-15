@@ -11,7 +11,7 @@ import type {McpPage} from './McpPage.js';
 import {McpResponse} from './McpResponse.js';
 import {SlimMcpResponse} from './SlimMcpResponse.js';
 import {ClearcutLogger} from './telemetry/ClearcutLogger.js';
-import type {Browser, CallToolResult} from './third_party/index.js';
+import type {CallToolResult, Mutex} from './third_party/index.js';
 import {zod} from './third_party/index.js';
 import {labels} from './tools/categories.js';
 import {categoryToFlagName} from './config/category-options.js';
@@ -23,25 +23,29 @@ import type {
 } from './tools/ToolDefinition.js';
 import {isAvailableInMode, isSlimTool} from './tools/ToolDefinition.js';
 import {logger} from './utils/logger.js';
-import type {Mutex} from './third_party/index.js';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {isLocalhost} from './utils/url.js';
 
 /**
- * Upper bound on how long a single tool call may wait on the browser
- * connection. Puppeteer normally rejects in-flight CDP calls when the
- * underlying transport closes, but a transport that dies silently (e.g. an
- * adb port-forward torn down mid-call, rather than closed cleanly) never
- * fires `close`/`error`/`disconnected`, so the call would otherwise hang
- * until an external (client-side) timeout gives up on the whole server. This
- * bound turns that into a fast, clear error instead, and forgets the cached
- * browser handle so the next call reconnects rather than reusing a handle
- * that still looks connected.
+ * Upper bound on how long a tool call may wait to acquire the browser
+ * (connect/launch and McpContext initialization). A connect attempt on a
+ * half-open socket can hang without ever failing; this bound turns that into
+ * a clear error and abandons the attempt so the next call starts fresh.
  *
- * Never shorter than the CDP protocol timeout: heavy pages keep CDP calls
- * busy for minutes (see PROTOCOL_TIMEOUT_MILLISECONDS), and timing out here
- * also closes a launched browser, so BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS bounds
- * both.
+ * This does not bound the tool's own work. A slow but valid call (a long
+ * `wait_for` timeout, an `evaluate_script` awaiting a slow promise, a
+ * Lighthouse audit) must finish on its own terms without the browser being
+ * closed underneath it. A transport that dies mid-call is detected by the
+ * WebSocket keep-alive configured in BrowserManager#connect(), which rejects
+ * the in-flight CDP calls and fires `disconnected`.
+ *
+ * Never shorter than the CDP protocol timeout
+ * (BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS), because acquiring the browser can
+ * legitimately take minutes: with --autoConnect, Brave holds the connection
+ * until the user allows remote debugging, and McpContext initialization
+ * makes CDP calls into the selected page, which heavy pages keep busy (see
+ * PROTOCOL_TIMEOUT_MILLISECONDS). Timing out abandons the attempt, closing a
+ * launched Brave or dropping an attached one, so the retry starts over.
  */
 export const TOOL_CALL_TIMEOUT_MS = Math.max(
   60_000,
@@ -116,7 +120,8 @@ async function validateAndResolvePathOrUrl(
     const url = new URL(filePathOrUrl);
     if (url.protocol === 'file:') {
       return pathToFileURL(await context.validatePath(fileURLToPath(url))).href;
-    } else if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)) {
+    }
+    if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)) {
       return filePathOrUrl;
     }
   } catch {
@@ -197,7 +202,6 @@ export class ToolHandler {
     private readonly serverArgs: ParsedArguments,
     private readonly getContext: () => Promise<McpContext>,
     private readonly toolMutex: Mutex,
-    private readonly forgetBrowserOnTimeout: (browser: Browser) => void,
     private readonly abandonPendingBrowserAttemptOnTimeout: () => void,
   ) {
     const {disabled, reason, unavailableInMode} = getToolStatusInfo(
@@ -215,7 +219,7 @@ export class ToolHandler {
   /**
    * Races a promise against TOOL_CALL_TIMEOUT_MS, calling onTimeout() if the
    * timer wins. The loser of the race is left running — there is no way to
-   * cancel a pending Puppeteer call — but since nothing is left awaiting it,
+   * cancel a pending connect/launch — but since nothing is left awaiting it,
    * it cannot block subsequent tool calls.
    */
   async #raceWithTimeout<T>(
@@ -223,7 +227,7 @@ export class ToolHandler {
     onTimeout: () => void,
   ): Promise<T> {
     const timeoutError = new ToolCallTimeoutError(
-      `Tool "${this.tool.name}" timed out after ${TOOL_CALL_TIMEOUT_MS}ms waiting on the browser connection. The connection may have been lost (for example, the debugged browser or app restarted). It will be re-established automatically on the next tool call.`,
+      `Tool "${this.tool.name}" timed out after ${TOOL_CALL_TIMEOUT_MS}ms waiting for the browser connection to be established. The connection attempt will be retried automatically on the next tool call.`,
     );
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -243,7 +247,7 @@ export class ToolHandler {
   }
 
   handle = async (params: Record<string, unknown>): Promise<CallToolResult> => {
-    using _guard = await this.toolMutex.acquire();
+    using guard = await this.toolMutex.acquire();
 
     if (this.disabledReason) {
       return {
@@ -283,61 +287,53 @@ export class ToolHandler {
       if (context.consumeReconnectNotice()) {
         response.setReconnectNotice();
       }
-      // Shares one budget with tool.handler(): several tools' actual CDP
-      // calls happen in response.handle() instead (take_snapshot,
-      // list_pages, get_network_request, list_extensions), so it needs
-      // covering too. The closure below isn't cancelled on timeout — it
-      // keeps running abandoned — but nothing after this point observes its
-      // result.
-      const {content, structuredContent} = await this.#raceWithTimeout(
-        (async () => {
-          let page: McpPage | undefined;
-          try {
-            await validateToolFiles(this.tool, params, context);
-            if (isPageScopedTool(this.tool)) {
-              const pageId =
-                typeof params.pageId === 'number' ? params.pageId : undefined;
-              page =
-                this.serverArgs.pageIdRouting &&
-                pageId !== undefined &&
-                !isSlimTool(this.tool)
-                  ? context.getPageById(pageId)
-                  : context.getSelectedMcpPage();
-              await page?.init();
-              response.setPage(page);
-              if (this.tool.blockedByDialog) {
-                page.throwIfDialogOpen();
-              }
-              await this.tool.handler(
-                {
-                  params,
-                  page,
-                },
-                response,
-                context,
-              );
-            } else {
-              await this.tool.handler(
-                {
-                  params,
-                },
-                response,
-                context,
-              );
-            }
-          } catch (err) {
-            response.setError(err);
+      let page: McpPage | undefined;
+      try {
+        await validateToolFiles(this.tool, params, context);
+        if (isPageScopedTool(this.tool)) {
+          const pageId =
+            typeof params.pageId === 'number' ? params.pageId : undefined;
+          page =
+            this.serverArgs.pageIdRouting &&
+            pageId !== undefined &&
+            !isSlimTool(this.tool)
+              ? context.getPageById(pageId)
+              : context.getSelectedMcpPage();
+          await page?.init();
+          response.setPage(page);
+          if (this.tool.blockedByDialog) {
+            page.throwIfDialogOpen();
           }
-          devToolsData = await context.getDevToolsData(page);
-          pageUrl = context.getSelectedMcpPageUrl(page);
-          // --experimentalDataFormat takes precedence over the legacy
-          // --experimentalToonFormat.
-          const dataFormat =
-            this.serverArgs.experimentalDataFormat ??
-            (this.serverArgs.experimentalToonFormat ? 'toon' : 'default');
-          return await response.handle(context, dataFormat);
-        })(),
-        () => this.forgetBrowserOnTimeout(context.browser),
+          await this.tool.handler(
+            {
+              params,
+              page,
+            },
+            response,
+            context,
+          );
+        } else {
+          await this.tool.handler(
+            {
+              params,
+            },
+            response,
+            context,
+          );
+        }
+      } catch (err) {
+        response.setError(err);
+      }
+      devToolsData = await context.getDevToolsData(page);
+      pageUrl = context.getSelectedMcpPageUrl(page);
+      // --experimentalDataFormat takes precedence over the legacy
+      // --experimentalToonFormat.
+      const dataFormat =
+        this.serverArgs.experimentalDataFormat ??
+        (this.serverArgs.experimentalToonFormat ? 'toon' : 'default');
+      const {content, structuredContent} = await response.handle(
+        context,
+        dataFormat,
       );
       const result: CallToolResult & {
         structuredContent?: Record<string, unknown>;

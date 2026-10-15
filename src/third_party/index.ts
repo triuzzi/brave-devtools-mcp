@@ -12,6 +12,8 @@ import type {Flags, OutputMode, Result, RunnerResult} from 'lighthouse';
 import type {Page} from 'puppeteer-core';
 import {z as zod} from 'zod';
 
+import type * as LighthouseBundle from './lighthouse-devtools-mcp-bundle.js';
+
 export type {Flags, Result, RunnerResult, OutputMode};
 
 export type {Options as YargsOptions, InferredOptionTypes} from 'yargs';
@@ -49,12 +51,17 @@ export {
   Locator,
   PredefinedNetworkConditions,
   KnownDevices,
+  CDPSession,
   CDPSessionEvent,
+  Connection,
   ScreenRecorder,
   Target,
   TargetType,
   TimeoutError,
+  Tracing,
   WebWorker,
+  WebMCP,
+  WebMCPTool,
 } from 'puppeteer-core';
 export {default as puppeteer} from 'puppeteer-core';
 export type * from 'puppeteer-core';
@@ -62,6 +69,7 @@ export {PipeTransport} from 'puppeteer-core/internal/node/PipeTransport.js';
 export {CdpBrowser} from 'puppeteer-core/internal/cdp/Browser.js';
 export {CdpFrame} from 'puppeteer-core/internal/cdp/Frame.js';
 export {CdpPage} from 'puppeteer-core/internal/cdp/Page.js';
+export {CdpScreenRecording} from 'puppeteer-core/internal/cdp/ScreenRecording.js';
 export {CdpExtension} from 'puppeteer-core/internal/cdp/Extension.js';
 export type {CdpWebWorker} from 'puppeteer-core/internal/cdp/WebWorker.js';
 export type {Realm} from 'puppeteer-core/internal/api/Realm.js';
@@ -88,27 +96,38 @@ export async function getGcfEncode(): Promise<(val: unknown) => string> {
   return encodeGeneric;
 }
 
-import {
-  snapshot as snapshotImpl,
-  navigation as navigationImpl,
-  generateReport as generateReportImpl,
-} from './lighthouse-devtools-mcp-bundle.js';
+let lighthouseBundle: Promise<typeof LighthouseBundle> | undefined;
+
+/**
+ * Loads the Lighthouse bundle on first use. The bundle is large and only the
+ * Lighthouse tool uses it, so a static import slows down every process start.
+ */
+function loadLighthouse(): Promise<typeof LighthouseBundle> {
+  lighthouseBundle ??= import('./lighthouse-devtools-mcp-bundle.js');
+  return lighthouseBundle;
+}
 
 export const lighthouseRunner = {
-  snapshot: snapshotImpl as (
-    page: Page,
-    options: {flags?: Flags},
-  ) => Promise<RunnerResult>,
-  navigation: navigationImpl as (
+  async snapshot(page: Page, options: {flags?: Flags}): Promise<RunnerResult> {
+    const {snapshot} = await loadLighthouse();
+    return await snapshot(page, options);
+  },
+  async navigation(
     page: Page,
     url: string,
     options: {flags?: Flags},
-  ) => Promise<RunnerResult>,
+  ): Promise<RunnerResult> {
+    const {navigation} = await loadLighthouse();
+    return await navigation(page, url, options);
+  },
 };
 
-export const generateReport = generateReportImpl as (
+export async function generateReport(
   lhr: Result,
   format: string,
-) => string;
+): Promise<string> {
+  const lighthouse = await loadLighthouse();
+  return lighthouse.generateReport(lhr, format);
+}
 
 export * as DevTools from '../../third_party/devtools-frontend/mcp/mcp.js';

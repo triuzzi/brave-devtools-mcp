@@ -48,19 +48,19 @@ npm cache clean --force
 
 ### `Target closed` error
 
-This indicates that the browser could not be started. Make sure that no Chrome
-instances are running or close them. Make sure you have the latest stable Chrome
-installed and that [your system is able to run Chrome](https://support.google.com/chrome/a/answer/7100626?hl=en).
+This indicates that the browser could not be started. Make sure that no other
+Brave instance is using the same profile, or close it. Make sure you have the
+latest Brave release installed and that your system can run Brave.
 
-### Chrome crashes on macOS when using Web Bluetooth
+### Brave crashes on macOS when using Web Bluetooth
 
-On macOS, Chrome launched by an MCP client application (such as Claude Desktop) may crash when a Web Bluetooth prompt appears. This is caused by a macOS privacy permission violation (TCC).
+On macOS, Brave launched by an MCP client application (such as Claude Desktop) may crash when a Web Bluetooth prompt appears. This is caused by a macOS privacy permission violation (TCC).
 
 To resolve this, grant Bluetooth permission to the MCP client application in `System Settings > Privacy & Security > Bluetooth`. After granting permission, restart the client application and start a new MCP session.
 
 ### Remote debugging between virtual machine (VM) and host fails
 
-When attempting to connect to Chrome running on a host machine from within a virtual machine (VM), Chrome may reject the connection due to 'Host' header validation. You can bypass this restriction by creating an SSH tunnel from the VM to the host. In the VM, run:
+When attempting to connect to Brave running on a host machine from within a virtual machine (VM), Brave may reject the connection due to 'Host' header validation. You can bypass this restriction by creating an SSH tunnel from the VM to the host. In the VM, run:
 
 ```sh
 ssh -N -L 127.0.0.1:9222:127.0.0.1:9222 <user>@<host-ip>
@@ -178,13 +178,13 @@ that this method installs only the MCP server without the bundled skills.
 
 If you are using the `--autoConnect` flag and tools like `list_pages`, `new_page`, or `navigate_page` fail with a timeout (e.g., `ProtocolError: Network.enable timed out` or `The socket connection was closed unexpectedly`), this usually means the MCP server cannot handshake with the running Brave instance correctly. Ensure:
 
-1. Chrome 144+ is **already** running.
-2. Remote debugging is enabled in Chrome via `brave://inspect/#remote-debugging`.
+1. A recent Brave release is **already** running.
+2. Remote debugging is enabled in Brave via `brave://inspect/#remote-debugging`.
 3. You have allowed the remote debugging connection prompt in the browser.
 4. There is no other MCP server or tool trying to connect to the same debugging port.
 
 > [!IMPORTANT]
-> In Chrome versions up to 149, connection issues may be caused by frozen or unloaded tabs.
+> In Brave releases based on Chromium 149 or earlier, connection issues may be caused by frozen or unloaded tabs.
 > Brave DevTools MCP forces all tabs to be loaded, so ensure your system has sufficient resources.
 > It is currently not recommended to use Brave DevTools MCP with browser instances running hundreds of tabs.
 > See [upstream issue #1921](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/1921) for more details.

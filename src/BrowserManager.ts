@@ -17,23 +17,35 @@ import {isAllowedUrl} from './utils/url.js';
 
 type Channel = NonNullable<ParsedArguments['channel']>;
 
+// Node runs a timer whose delay exceeds 2^31-1 ms after 1 ms instead, which
+// would make every CDP call and tool call time out at once.
+const MAXIMUM_TIMER_DELAY_MILLISECONDS = 2_147_483_647;
+
+export function parseProtocolTimeoutMilliseconds(
+  rawValue: string | undefined,
+): number {
+  const timeoutMilliseconds = Number(rawValue ?? '600000');
+  if (
+    !Number.isSafeInteger(timeoutMilliseconds) ||
+    timeoutMilliseconds <= 0 ||
+    timeoutMilliseconds > MAXIMUM_TIMER_DELAY_MILLISECONDS
+  ) {
+    throw new Error(
+      `BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer no greater than ${MAXIMUM_TIMER_DELAY_MILLISECONDS}.`,
+    );
+  }
+  return timeoutMilliseconds;
+}
+
 // Heavy pages (e.g. Studio module dev bundles >100MB) cannot ack
 // `Network.enable` and other auto-attached domain calls within
 // puppeteer's default 180s. Once that fires, the CDP connection is
 // marked dead and every subsequent call throws — only daemon restart
 // recovers. Bumping the ceiling to 10min covers realistic loads;
 // override via env for power users.
-export const PROTOCOL_TIMEOUT_MILLISECONDS = Number(
-  process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS ?? '600000',
+export const PROTOCOL_TIMEOUT_MILLISECONDS = parseProtocolTimeoutMilliseconds(
+  process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS,
 );
-if (
-  !Number.isSafeInteger(PROTOCOL_TIMEOUT_MILLISECONDS) ||
-  PROTOCOL_TIMEOUT_MILLISECONDS <= 0
-) {
-  throw new Error(
-    'BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS must be a positive integer.',
-  );
-}
 
 export function resolveBraveExecutablePath(
   channel: Channel = 'release',
@@ -287,7 +299,7 @@ export class BrowserManager {
     // a call silently adopt the freshly-rotated token as its own baseline
     // once the lock frees up, defeating the abandonment check entirely.
     const attempt = this.#browserAttempt;
-    using _guard = await this.#mutex.acquire();
+    using guard = await this.#mutex.acquire();
     if (this.#closingCount > 0) {
       throw new Error('Browser was closed while initializing.');
     }
@@ -334,9 +346,7 @@ export class BrowserManager {
   abandonPendingAttempt(): void {
     this.#browserAttempt = new BrowserAttempt();
     this.#initPromise = undefined;
-    if (this.#browser) {
-      this.forget(this.#browser);
-    }
+    this.#forgetCurrentBrowser();
   }
 
   async #initBrowser(): Promise<Browser> {
@@ -479,26 +489,34 @@ export class BrowserManager {
       userDataDir,
       blockedUrlPattern: blocklist,
       allowedUrlPattern: allowlist,
+      categoryExtensions: enableExtensions,
     } = this.#serverArgs;
     // Important: only pass channel, if autoConnect is true.
     const channel = isAutoConnect ? this.#serverArgs.channel : undefined;
 
     const connectOptions: Parameters<typeof puppeteer.connect>[0] = {
-      targetFilter: BrowserManager.makeTargetFilter(),
+      targetFilter: BrowserManager.makeTargetFilter(enableExtensions),
       defaultViewport: null,
       handleDevToolsAsPage: true,
       protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
       blocklist,
       allowlist,
       logger: puppeteerLogger,
+      // Detects a transport that died without a close frame (e.g. an adb
+      // port-forward torn down mid-call). Puppeteer pings the socket
+      // periodically and terminates it on a missed pong, which rejects the
+      // in-flight CDP calls and fires `disconnected` so #evictIfCurrent()
+      // drops the stale handle. Without this, such a call would hang until
+      // protocolTimeout while holding the tool mutex.
+      wsOptions: {
+        keepAlive: true,
+        headers: wsHeaders,
+      },
     };
 
     let autoConnect = false;
     if (wsEndpoint) {
       connectOptions.browserWSEndpoint = wsEndpoint;
-      if (wsHeaders) {
-        connectOptions.headers = wsHeaders;
-      }
     } else if (browserURL) {
       connectOptions.browserURL = browserURL;
     } else if (channel || userDataDir) {
@@ -560,31 +578,30 @@ export class BrowserManager {
   }
 
   /**
-   * Clears the cached browser handle if it still matches `candidate`, so the
-   * next ensureBrowser() call establishes a fresh connection instead of
-   * reusing a handle that looks connected but is actually dead (e.g. its CDP
-   * transport died without ever emitting a `close`/`disconnected` event — as
-   * happens when an adb port-forward is torn down mid-call rather than
-   * closed cleanly).
+   * Drops the cached browser handle so the next ensureBrowser() call
+   * establishes a fresh connection. Only called from abandonPendingAttempt()
+   * when a getContext()-level timeout fires after ensureBrowser() already
+   * resolved, which means the handle looks connected but its CDP
+   * initialization is hanging.
    *
-   * Also actively tears `candidate` down in the background: closes it if it
-   * was launched (so the Brave subprocess doesn't leak), or disconnects if
-   * it was only connected to (so the transport and its listeners don't
-   * leak). This also settles any CDP call still pending against it —
-   * Puppeteer's connection disposal synchronously rejects in-flight
-   * callbacks — instead of leaving a hung call to leak forever.
+   * Also tears the browser down in the background: closes it if it was
+   * launched (so the Brave subprocess doesn't leak), or disconnects if it
+   * was only connected to (so the transport and its listeners don't leak).
+   * Puppeteer's connection disposal rejects any in-flight CDP call, so a hung
+   * call settles instead of leaking forever.
    */
-  forget(candidate: Browser): void {
-    if (this.#browser !== candidate) {
+  #forgetCurrentBrowser(): void {
+    const browser = this.#browser;
+    if (!browser) {
       return;
     }
     const mode = this.#browserMode;
     this.#browser = undefined;
     this.#browserMode = undefined;
     if (mode === 'launched') {
-      void this.#closeLaunchedBrowser(candidate);
+      void this.#closeLaunchedBrowser(browser);
     } else {
-      void candidate.disconnect().catch(err => {
+      void browser.disconnect().catch(err => {
         logger?.('Failed to disconnect forgotten browser', err);
       });
     }
@@ -596,9 +613,8 @@ export class BrowserManager {
    * call reconnects proactively rather than only discovering the staleness
    * lazily on the next call's `!this.#browser?.connected` check. No teardown
    * here — the browser is already disconnected/closed, that's why this
-   * fired — so this shares forget()'s identity guard without its cleanup,
-   * making a `disconnected` that fires late on an already-superseded browser
-   * a safe no-op.
+   * fired. The identity guard makes a `disconnected` that fires late on an
+   * already-superseded browser a safe no-op.
    */
   #evictIfCurrent(candidate: Browser): void {
     if (this.#browser !== candidate) {
@@ -655,7 +671,7 @@ export class BrowserManager {
   async close(): Promise<void> {
     this.#initPromise = undefined;
     this.#closingCount++;
-    using _guard = await this.#mutex.acquire();
+    using guard = await this.#mutex.acquire();
     try {
       await this.#closeBrowser();
     } finally {
