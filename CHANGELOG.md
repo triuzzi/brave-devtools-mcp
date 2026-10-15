@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.11.0](https://github.com/triuzzi/brave-devtools-mcp/compare/v1.10.1...v1.11.0) (2026-10-15)
+
+### Upstream sync
+
+* sync with Chrome DevTools MCP 1.11.0 plus the commits that landed on upstream `main` after
+  that release: an active screencast stopped when its page closes, and the Lighthouse bundle
+  loaded on the first audit instead of at every process start
+* `screencast_start` and `screencast_stop` are on by default and record with the browser's
+  built-in recorder, without ffmpeg; `--experimentalScreencast` selects the legacy ffmpeg recorder
+* a slow tool is no longer cut off: the tool-call timeout only covers acquiring the browser
+  (launching or connecting to it and setting up the selected page), and a WebSocket keep-alive
+  detects a dead connection to an attached browser
+* URL patterns with a partial IPv4 wildcard, such as `*://192.168.1.*/*`, and non-positive
+  `--viewport` sizes stop the server at startup; resources the server fetches for DevTools,
+  such as source maps, follow the URL policy on every redirect
+* `--categoryExtensions` is accepted again with `--autoConnect`, `--browserUrl` and `--wsEndpoint`
+* config-file discovery no longer reads the working directory; it checks `$PLUGIN_DATA`, then the
+  global config
+* `brave-devtools start --allowUnrestrictedPaths=false` restricts file access to the OS temp
+  directory instead of being ignored
+* `lighthouse_audit` returns failing audits inline, `emulate` covers more CSS media features, the
+  heap-snapshot tools paginate and truncate long names, `performance_start_trace` takes
+  `ignoreCache`, input tools report the pages they open, WebMCP debugging tools are listed with
+  the third-party developer tools, and the CLI passes positional values that start with `-`
+  through to tools
+
+### Brave
+
+* `BRAVE_DEVTOOLS_MCP_CATEGORY_EXPERIMENTAL_THIRD_PARTY` turns on the third-party developer tools
+  category, like `--categoryExperimentalThirdParty`
+* the tool-call timeout stays at the CDP protocol timeout (`BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS`,
+  10 minutes by default) instead of upstream's 60 seconds, because acquiring the browser can take
+  minutes: `--autoConnect` waits for you to allow remote debugging in Brave, and heavy pages slow
+  down the selected page's setup; timing out would close a launched Brave or drop an attached one
+  and start over
+* `BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS` is documented in `docs/configuration.md`, and values above
+  Node's timer limit (2147483647) stop the server at startup instead of making every call time
+  out at once
+* `--categoryExperimentalWebmcp` asks only for `--enable-features=WebMCP`, which is all Brave needs
+
 ## [1.10.1](https://github.com/triuzzi/brave-devtools-mcp/compare/v1.9.0...v1.10.1) (2026-10-06)
 
 ### Upstream sync
