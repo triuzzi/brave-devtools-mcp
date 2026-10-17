@@ -272,6 +272,17 @@ export class McpPage implements ContextPage {
         return;
       }
       this.#pptrPage = page;
+      // Estate hard rule: sharing a visible Brave window must never raise it.
+      // Puppeteer / CDP Page.bringToFront is what steals desktop focus from the
+      // founder. When --no-emulate-focused-pages is set, neuter bringToFront on
+      // every page so click/fill/select cannot sneak a raise through.
+      if (!this.#emulateFocusedPages) {
+        page.bringToFront = async () => {
+          logger?.(
+            'suppressed Page.bringToFront (--no-emulate-focused-pages)',
+          );
+        };
+      }
       page.on('dialog', this.#dialogHandler);
       this.#networkCollector = new NetworkCollector(page);
       this.#consoleCollector = new ConsoleCollector(page, collect => {
@@ -296,6 +307,11 @@ export class McpPage implements ContextPage {
     if (this.#disposed) {
       this.dispose();
     }
+  }
+
+  /** True only when focus emulation (and window raises) are allowed. */
+  get emulateFocusedPagesEnabled(): boolean {
+    return this.#emulateFocusedPages;
   }
 
   async #initFocusEmulationNoThrow(): Promise<void> {

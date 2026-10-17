@@ -64,8 +64,17 @@ export const selectPage = defineTool((args: ParsedArguments) => ({
     response.setIncludePages(true);
     response.setListThirdPartyDeveloperTools();
     response.setListWebMcpTools();
+    // Never raise the founder Brave window when --no-emulate-focused-pages.
+    // Shared desktop attach (ss-brave-mcp) always suppresses raises; Page.bringToFront
+    // is also no-op'd on the Puppeteer page in that mode.
     if (request.params.bringToFront) {
-      await page.pptrPage.bringToFront();
+      if (args?.emulateFocusedPages === false) {
+        response.appendResponseLine(
+          'Ignored bringToFront=true: --no-emulate-focused-pages (desktop focus stays with the founder).',
+        );
+      } else {
+        await page.pptrPage.bringToFront();
+      }
     }
   },
 }));
