@@ -596,8 +596,18 @@ export class McpContext implements Context, BrowserlessContext {
     background?: boolean,
     isolatedContextName?: string,
   ): Promise<McpPage> {
-    const openInBackground =
-      background ?? (this.#options.backgroundPages ? true : undefined);
+    // Isolated browser contexts open a separate cookie jar and often raise a
+    // new window, which a shared desktop session must never do.
+    if (
+      isolatedContextName !== undefined &&
+      this.#config.resolved.emulateFocusedPages === false
+    ) {
+      throw new Error(
+        'isolatedContext is refused while --no-emulate-focused-pages is set. ' +
+          'Use a normal background tab on the existing Brave instance ' +
+          '(new_page with background=true, no isolatedContext).',
+      );
+    }
     let page: Page;
     if (isolatedContextName !== undefined) {
       let ctx = this.#isolatedContexts.get(isolatedContextName);
@@ -605,9 +615,9 @@ export class McpContext implements Context, BrowserlessContext {
         ctx = await this.browser.createBrowserContext();
         this.#isolatedContexts.set(isolatedContextName, ctx);
       }
-      page = await ctx.newPage({background: openInBackground});
+      page = await ctx.newPage({background});
     } else {
-      page = await this.browser.newPage({background: openInBackground});
+      page = await this.browser.newPage({background});
     }
     const mcpPage = this.#createMcpPage(page.target());
     await mcpPage.init({emulateFocus: true});

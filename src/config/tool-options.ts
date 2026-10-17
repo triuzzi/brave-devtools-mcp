@@ -13,6 +13,7 @@ interface ToolOption extends YargsOptions {
 }
 
 export interface ToolArguments {
+  emulateFocusedPages: boolean;
   screenshotFormat: 'jpeg' | 'png' | 'webp';
   screenshotQuality?: number;
   screenshotMaxWidth?: number;

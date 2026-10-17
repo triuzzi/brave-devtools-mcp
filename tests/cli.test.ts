@@ -81,6 +81,7 @@ describe('cli args parsing', () => {
     slim: false,
     viaCli: false,
     devtoolsComments: false,
+    emulateFocusedPages: true,
     watchConfig: false,
   };
 

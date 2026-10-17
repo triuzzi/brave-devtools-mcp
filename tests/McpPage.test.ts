@@ -574,14 +574,32 @@ describe('McpPage', () => {
       pptrPage.emulateFocusedPage.resolves();
       const target = createMockPuppeteerTarget({page: pptrPage});
       const mcpPage = new McpPage(target, 1, {
-        hasNetworkBlockOrAllowlist: false,
+        config: createMockServerConfig({emulateFocusedPages: false}),
         locatorClass: Locator,
-        emulateFocusedPages: false,
       });
 
       await mcpPage.init();
 
       sinon.assert.notCalled(pptrPage.emulateFocusedPage);
+    });
+
+    it('no-ops bringToFront when emulateFocusedPages is false', async () => {
+      const pptrPage = createMockPuppeteerPage();
+      pptrPage.emulateFocusedPage.resolves();
+      const originalBring = pptrPage.bringToFront;
+      const target = createMockPuppeteerTarget({page: pptrPage});
+      const mcpPage = new McpPage(target, 1, {
+        config: createMockServerConfig({emulateFocusedPages: false}),
+        locatorClass: Locator,
+      });
+
+      await mcpPage.init();
+      await mcpPage.pptrPage.bringToFront();
+
+      assert.strictEqual(mcpPage.emulateFocusedPagesEnabled, false);
+      // Replacement must not be the original spy that would raise the window.
+      assert.notStrictEqual(mcpPage.pptrPage.bringToFront, originalBring);
+      sinon.assert.notCalled(originalBring);
     });
   });
 

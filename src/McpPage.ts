@@ -380,6 +380,11 @@ export class McpPage implements ContextPage {
         return;
       }
       this.#pptrPage = page;
+      if (!this.#emulateFocusedPages) {
+        page.bringToFront = async () => {
+          logger?.('suppressed Page.bringToFront (--no-emulate-focused-pages)');
+        };
+      }
       this.#networkOverrideManager = new NetworkOverrideManager(
         page,
         this.#config,
@@ -411,6 +416,11 @@ export class McpPage implements ContextPage {
     if (this.#disposed) {
       this.dispose();
     }
+  }
+
+  /** True only when focus emulation (and window raises) are allowed. */
+  get emulateFocusedPagesEnabled(): boolean {
+    return this.#emulateFocusedPages;
   }
 
   #initFocusEmulationNoThrow(): void {
