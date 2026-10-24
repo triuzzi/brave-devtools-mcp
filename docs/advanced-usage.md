@@ -62,19 +62,38 @@ In these cases, start Brave first and let the Brave DevTools MCP server connect 
 
 ### Automatically connecting to a running Brave instance
 
-**Step 1:** Set up remote debugging in Brave
+**Step 1:** Start Brave with CLI-owned remote debugging
 
-In Brave, do the following to set up remote debugging:
+Prefer launching Brave yourself with a remote debugging port and the
+per-connection consent feature disabled. Fully quit any existing Brave windows
+first, then start a dedicated profile:
 
-1.  Navigate to `brave://inspect/#remote-debugging` to enable remote debugging.
-2.  Follow the dialog UI to allow or disallow incoming debugging connections.
+```bash
+brave-browser \
+  --user-data-dir=/tmp/brave-profile-release \
+  --remote-debugging-address=127.0.0.1 \
+  --remote-debugging-port=9222 \
+  --disable-features=DevToolsAcceptDebuggingConnections
+```
 
-**Step 2:** Configure Brave DevTools MCP server to automatically connect to a running Brave instance
+Confirm HTTP CDP is ready before agents attach:
+
+```bash
+curl -fsS http://127.0.0.1:9222/json/version >/dev/null && echo brave-cdp-ready
+```
+
+> [!WARNING]
+> Enabling remote debugging only through `brave://inspect/#remote-debugging`
+> leaves the debug port listening while `/json/version` returns **404** until
+> each connection is approved. A WebSocket attach is what raises Brave's
+> **Allow remote debugging?** dialog and focuses the browser window.
+> `brave-mcp` detects that consent-gated state and refuses to attach.
+
+**Step 2:** Configure Brave DevTools MCP server to automatically connect
 
 To connect the `brave-mcp` server to the running Brave instance, use
-`--autoConnect` command line argument for the MCP server.
-
-The following code snippet is an example configuration for gemini-cli:
+`--autoConnect` (profile/`DevToolsActivePort` discovery) or `--browser-url`
+(explicit HTTP endpoint):
 
 ```json
 {
@@ -98,12 +117,9 @@ Check the performance of https://developers.chrome.com
 > [!NOTE]
 > The <code>autoConnect</code> option requires the user to start Brave. If the user has multiple active profiles, the MCP server connects to Brave's default profile and can access all open windows for that profile.
 
-The Brave DevTools MCP server will try to connect to your running Brave
-instance. It shows a dialog asking for user permission.
-
-Clicking **Allow** results in the Brave DevTools MCP server opening
-[developers.chrome.com](http://developers.chrome.com) and taking a performance
-trace.
+With CLI-owned debugging, the MCP server connects without a native permission
+dialog and can open [developers.chrome.com](http://developers.chrome.com) for a
+performance trace.
 
 ### Manual connection using port forwarding
 
@@ -138,19 +154,31 @@ Use a dedicated user data directory when enabling the remote debugging port so y
 **macOS**
 
 ```bash
-/Applications/Brave\ Browser.app/Contents/MacOS/Brave\ Browser --remote-debugging-port=9222 --user-data-dir=/tmp/brave-profile-release
+/Applications/Brave\ Browser.app/Contents/MacOS/Brave\ Browser \
+  --remote-debugging-address=127.0.0.1 \
+  --remote-debugging-port=9222 \
+  --disable-features=DevToolsAcceptDebuggingConnections \
+  --user-data-dir=/tmp/brave-profile-release
 ```
 
 **Linux**
 
 ```bash
-/usr/bin/brave-browser --remote-debugging-port=9222 --user-data-dir=/tmp/brave-profile-release
+/usr/bin/brave-browser \
+  --remote-debugging-address=127.0.0.1 \
+  --remote-debugging-port=9222 \
+  --disable-features=DevToolsAcceptDebuggingConnections \
+  --user-data-dir=/tmp/brave-profile-release
 ```
 
 **Windows**
 
 ```bash
-"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" --remote-debugging-port=9222 --user-data-dir="%TEMP%\brave-profile-release"
+"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" ^
+  --remote-debugging-address=127.0.0.1 ^
+  --remote-debugging-port=9222 ^
+  --disable-features=DevToolsAcceptDebuggingConnections ^
+  --user-data-dir="%TEMP%\brave-profile-release"
 ```
 
 **Step 3: Test your setup**

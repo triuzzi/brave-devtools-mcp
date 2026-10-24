@@ -122,6 +122,7 @@ describe('browser', () => {
         headless: true,
         args: [
           '--custom-arg',
+          '--disable-features=DevToolsAcceptDebuggingConnections',
           '--proxy-server=http://localhost:8080',
           '--hide-crash-restore-bubble',
           '--screen-info={3840x2160}',
@@ -172,6 +173,10 @@ describe('browser', () => {
       const connectStub = sinon
         .stub(puppeteer, 'connect')
         .resolves(pptrBrowser);
+      // Unreachable HTTP probe must not block the stubbed connect path.
+      const fetchStub = sinon
+        .stub(globalThis, 'fetch')
+        .rejects(new TypeError('fetch failed'));
 
       const args = createMockParsedArguments({
         browserUrl: 'http://127.0.0.1:9222',
@@ -184,6 +189,7 @@ describe('browser', () => {
       assert.strictEqual(browser, pptrBrowser);
       sinon.assert.calledOnce(connectStub);
       sinon.assert.notCalled(launchStub);
+      sinon.assert.calledOnce(fetchStub);
       sinon.assert.calledWithMatch(connectStub, {
         browserURL: 'http://127.0.0.1:9222',
         protocolTimeout: PROTOCOL_TIMEOUT_MILLISECONDS,
@@ -192,6 +198,25 @@ describe('browser', () => {
       await manager.close();
       sinon.assert.calledOnceWithExactly(pptrBrowser.disconnect);
       sinon.assert.notCalled(pptrBrowser.close);
+    });
+
+    it('refuses browserUrl attach when loopback CDP is consent-gated', async () => {
+      const launchStub = sinon.stub(puppeteer, 'launch');
+      const connectStub = sinon.stub(puppeteer, 'connect');
+      sinon.stub(globalThis, 'fetch').resolves(new Response('', {status: 404}));
+
+      const manager = new BrowserManager(
+        createMockParsedArguments({
+          browserUrl: 'http://127.0.0.1:9222',
+        }),
+      );
+
+      await assert.rejects(
+        manager.ensureBrowser(),
+        /consent-gated|Allow remote debugging/,
+      );
+      sinon.assert.notCalled(connectStub);
+      sinon.assert.notCalled(launchStub);
     });
 
     it('autoConnect reads DevToolsActivePort from the Brave profile of the channel', async () => {
@@ -214,6 +239,7 @@ describe('browser', () => {
       const connectStub = sinon
         .stub(puppeteer, 'connect')
         .resolves(pptrBrowser);
+      sinon.stub(globalThis, 'fetch').rejects(new TypeError('fetch failed'));
       const manager = new BrowserManager(
         createMockParsedArguments({autoConnect: true, channel: 'nightly'}),
       );
@@ -227,10 +253,40 @@ describe('browser', () => {
       });
     });
 
+    it('autoConnect refuses consent-gated DevToolsActivePort listeners', async () => {
+      using homeDirectory = createTempDir('brave-devtools-test-home-');
+      sinon.stub(os, 'platform').returns('darwin');
+      sinon.stub(os, 'homedir').returns(homeDirectory.path);
+      const profileDirectory = path.join(
+        homeDirectory.path,
+        'Library',
+        'Application Support',
+        'BraveSoftware',
+        'Brave-Browser',
+      );
+      fs.mkdirSync(profileDirectory, {recursive: true});
+      fs.writeFileSync(
+        path.join(profileDirectory, 'DevToolsActivePort'),
+        '9222\n/devtools/browser/consent-gated\n',
+      );
+      const connectStub = sinon.stub(puppeteer, 'connect');
+      sinon.stub(globalThis, 'fetch').resolves(new Response('', {status: 404}));
+      const manager = new BrowserManager(
+        createMockParsedArguments({autoConnect: true, channel: 'release'}),
+      );
+
+      await assert.rejects(
+        manager.ensureBrowser(),
+        /consent-gated|DevToolsAcceptDebuggingConnections/,
+      );
+      sinon.assert.notCalled(connectStub);
+    });
+
     it('enables WebSocket keep-alive and passes wsHeaders when connecting', async () => {
       const connectStub = sinon
         .stub(puppeteer, 'connect')
         .resolves(createMockPuppeteerBrowser());
+      sinon.stub(globalThis, 'fetch').rejects(new TypeError('fetch failed'));
 
       const args = createMockParsedArguments({
         wsEndpoint: 'ws://127.0.0.1:9222/devtools/browser/abc',
@@ -252,6 +308,7 @@ describe('browser', () => {
         const connectStub = sinon
           .stub(puppeteer, 'connect')
           .resolves(createMockPuppeteerBrowser());
+        sinon.stub(globalThis, 'fetch').rejects(new TypeError('fetch failed'));
 
         const args = createMockParsedArguments({
           browserUrl: 'http://127.0.0.1:9222',
@@ -491,6 +548,7 @@ describe('browser', () => {
           .resolves(firstBrowser)
           .onSecondCall()
           .resolves(secondBrowser);
+        sinon.stub(globalThis, 'fetch').rejects(new TypeError('fetch failed'));
 
         const manager = new BrowserManager(
           createMockParsedArguments({browserUrl: 'http://127.0.0.1:9222'}),
@@ -525,6 +583,7 @@ describe('browser', () => {
           })
           .onSecondCall()
           .resolves(freshBrowser);
+        sinon.stub(globalThis, 'fetch').rejects(new TypeError('fetch failed'));
 
         const manager = new BrowserManager(
           createMockParsedArguments({browserUrl: 'http://127.0.0.1:9222'}),
