@@ -113,7 +113,9 @@ export function resolveBraveExecutablePath(
         continue;
       }
 
-      for (const pathEntry of (process.env['PATH'] ?? '').split(path.delimiter)) {
+      for (const pathEntry of (process.env['PATH'] ?? '').split(
+        path.delimiter,
+      )) {
         if (!pathEntry) {
           continue;
         }

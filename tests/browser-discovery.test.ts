@@ -13,8 +13,8 @@ import {afterEach, describe, it} from 'node:test';
 import {
   linuxBraveExecutableCandidates,
   resolveBraveExecutablePath,
-  resolveBraveUserDataDir,
-} from '../src/browser.js';
+  resolveBraveUserDataDirectory,
+} from '../src/BrowserManager.js';
 
 const originalBravePath = process.env['BRAVE_PATH'];
 const originalPath = process.env['PATH'];
@@ -82,7 +82,7 @@ describe(
       fs.mkdirSync(originProfile, {recursive: true});
       process.env['XDG_CONFIG_HOME'] = configDirectory;
 
-      assert.strictEqual(resolveBraveUserDataDir('release'), originProfile);
+      assert.strictEqual(resolveBraveUserDataDirectory('release'), originProfile);
     });
 
     it('prefers the release profile with an active debugging port', () => {
@@ -105,7 +105,7 @@ describe(
       );
       process.env['XDG_CONFIG_HOME'] = configDirectory;
 
-      assert.strictEqual(resolveBraveUserDataDir('release'), originProfile);
+      assert.strictEqual(resolveBraveUserDataDirectory('release'), originProfile);
     });
   },
 );
