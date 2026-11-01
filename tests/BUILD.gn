@@ -26,6 +26,7 @@ ts_library("tests") {
     "SlimMcpResponse.test.ts",
     "TextSnapshot.test.ts",
     "ToolHandler.test.ts",
+    "browser-discovery.test.ts",
     "browser.test.ts",
     "cli-imports.test.ts",
     "cli.test.ts",

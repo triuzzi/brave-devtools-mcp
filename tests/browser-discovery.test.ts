@@ -13,19 +13,13 @@ import {afterEach, describe, it} from 'node:test';
 import {
   linuxBraveExecutableCandidates,
   resolveBraveExecutablePath,
-  resolveBraveUserDataDir,
-} from '../src/browser.js';
+  resolveBraveUserDataDirectory,
+} from '../src/BrowserManager.js';
+import {createTempDir} from './utils.js';
 
 const originalBravePath = process.env['BRAVE_PATH'];
 const originalPath = process.env['PATH'];
 const originalXdgConfigHome = process.env['XDG_CONFIG_HOME'];
-const temporaryDirectories: string[] = [];
-
-function temporaryDirectory(): string {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'brave-origin-'));
-  temporaryDirectories.push(directory);
-  return directory;
-}
 
 afterEach(() => {
   if (originalBravePath === undefined) {
@@ -43,9 +37,6 @@ afterEach(() => {
   } else {
     process.env['XDG_CONFIG_HOME'] = originalXdgConfigHome;
   }
-  for (const directory of temporaryDirectories.splice(0)) {
-    fs.rmSync(directory, {recursive: true, force: true});
-  }
 });
 
 describe(
@@ -62,38 +53,41 @@ describe(
     });
 
     it('finds the brave-origin executable on PATH', () => {
-      const binDirectory = temporaryDirectory();
-      const executable = path.join(binDirectory, 'brave-origin');
+      using binDirectory = createTempDir('brave-origin-');
+      const executable = path.join(binDirectory.path, 'brave-origin');
       fs.writeFileSync(executable, '#!/bin/sh\n');
       fs.chmodSync(executable, 0o755);
       delete process.env['BRAVE_PATH'];
-      process.env['PATH'] = binDirectory;
+      process.env['PATH'] = binDirectory.path;
 
       assert.strictEqual(resolveBraveExecutablePath('release'), executable);
     });
 
     it('uses the Brave-Origin profile when it is the installed release profile', () => {
-      const configDirectory = temporaryDirectory();
+      using configDirectory = createTempDir('brave-origin-');
       const originProfile = path.join(
-        configDirectory,
+        configDirectory.path,
         'BraveSoftware',
         'Brave-Origin',
       );
       fs.mkdirSync(originProfile, {recursive: true});
-      process.env['XDG_CONFIG_HOME'] = configDirectory;
+      process.env['XDG_CONFIG_HOME'] = configDirectory.path;
 
-      assert.strictEqual(resolveBraveUserDataDir('release'), originProfile);
+      assert.strictEqual(
+        resolveBraveUserDataDirectory('release'),
+        originProfile,
+      );
     });
 
     it('prefers the release profile with an active debugging port', () => {
-      const configDirectory = temporaryDirectory();
+      using configDirectory = createTempDir('brave-origin-');
       const standardProfile = path.join(
-        configDirectory,
+        configDirectory.path,
         'BraveSoftware',
         'Brave-Browser',
       );
       const originProfile = path.join(
-        configDirectory,
+        configDirectory.path,
         'BraveSoftware',
         'Brave-Origin',
       );
@@ -103,9 +97,12 @@ describe(
         path.join(originProfile, 'DevToolsActivePort'),
         '9222\n',
       );
-      process.env['XDG_CONFIG_HOME'] = configDirectory;
+      process.env['XDG_CONFIG_HOME'] = configDirectory.path;
 
-      assert.strictEqual(resolveBraveUserDataDir('release'), originProfile);
+      assert.strictEqual(
+        resolveBraveUserDataDirectory('release'),
+        originProfile,
+      );
     });
   },
 );
