@@ -7,7 +7,7 @@
       "args": [
         "--prefix",
         "${PLUGIN_DATA}",
-        "brave-mcp@1.11.0"
+        "brave-mcp@1.12.0"
       ]
     }
   }

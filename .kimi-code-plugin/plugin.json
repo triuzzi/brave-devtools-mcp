@@ -1,0 +1,19 @@
+{
+  "name": "brave-devtools",
+  "description": "Help your agent build, debug, and verify your code correctly. With Brave DevTools for agents, your AI agent can interact with the Brave browser to test code, emulate users, and catch bugs using Brave DevTools’ capabilities before shipping.",
+  "version": "1.12.0",
+  "author": {
+    "name": "Emanuele Triuzzi"
+  },
+  "logo": "https://raw.githubusercontent.com/triuzzi/brave-devtools-mcp/main/docs/assets/social-preview.png",
+  "homepage": "https://github.com/triuzzi/brave-devtools-mcp#readme",
+  "repository": "https://github.com/triuzzi/brave-devtools-mcp",
+  "mcpServers": {
+    "brave-devtools": {
+      "command": "npx",
+      "args": [
+        "brave-mcp@1.12.0"
+      ]
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Brave DevTools CLI
 
-The `brave-mcp` package includes an **experimental** CLI interface that allows you to interact with the browser directly from your terminal. This is particularly useful for debugging or when you want an agent to generate scripts that automate browser actions.
+The `brave-mcp` package includes a CLI interface that allows you to interact with the browser directly from your terminal. This is particularly useful for debugging or when you want an agent to generate scripts that automate browser actions.
 
 ## Getting started
 
@@ -20,6 +20,21 @@ cannot be combined with `--workspace`.
 ```sh
 brave-devtools start --workspace=/path/to/project --workspace=/path/to/output
 ```
+
+## Agent skill
+
+The [`brave-devtools-cli`](../skills/brave-devtools-cli) skill teaches your agent how to use the CLI. Plugin installs include this skill. To install it manually, copy the skill folder into the skills directory of your agent:
+
+```sh
+# Example for Claude Code. Use the skills directory of your agent.
+mkdir -p ~/.claude/skills
+cp -R "$(npm root -g)/brave-mcp/skills/brave-devtools-cli" ~/.claude/skills/
+```
+
+See [Skills](../README.md#skills) for all skills and installation options.
+
+> [!NOTE]
+> Copy the skill again each time you update the CLI. See [Keep skills up to date](../README.md#keep-skills-up-to-date).
 
 ## How it works
 
@@ -45,8 +60,7 @@ brave-devtools stop
 
 ## Command Usage
 
-The CLI only supports tools available in the MCP server without additional arguments (see [Tool reference](./tool-reference.md)).
-Thus, `--categoryExtensions` tools are currently not available in the CLI.
+The CLI supports all tools available in the MCP server even if they require a flag to activate in the MCP server (see [Tool reference](./tool-reference.md)).
 
 ```sh
 brave-devtools <tool> [arguments] [flags]

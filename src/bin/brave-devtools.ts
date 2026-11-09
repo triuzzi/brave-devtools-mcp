@@ -23,8 +23,9 @@ import {
   serializeArgs,
   assertValidSessionId,
 } from '../daemon/utils.js';
-import {logDisclaimers} from '../index.js';
-import {hideBin, yargs, type CallToolResult} from '../third_party/index.js';
+import {logDisclaimers} from '../utils/disclaimers.js';
+import {hideBin, yargs} from '../third_party/cli.js';
+import type {CallToolResult} from '../third_party/index.js';
 import {checkForUpdates} from '../utils/check-for-updates.js';
 import {VERSION} from '../version.js';
 
@@ -34,7 +35,7 @@ import {
   shieldLiteralArgs,
 } from '../config/cli-commands.js';
 import {commands} from '../config/cli-options.js';
-import {mcpOptions, getCliOptions} from '../config/mcp-options.js';
+import {getCliOptions} from '../config/mcp-options.js';
 
 import {ConfigParser} from '../config/ConfigParser.js';
 
@@ -270,7 +271,7 @@ for (const [commandName, commandDef] of Object.entries(commands)) {
           : Promise.resolve(undefined);
 
         if (!daemonRunning) {
-          await start(serializeArgs(mcpOptions, argv), sessionId);
+          await start([], sessionId);
         }
 
         const commandArgs: Record<string, unknown> = {};

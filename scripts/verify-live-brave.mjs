@@ -17,7 +17,7 @@ const syntheticPageUrl = `data:text/html,<title>${syntheticPageMarker}</title><h
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [
-    'build/src/bin/brave-devtools-mcp.js',
+    'out/Default/gen/src/bin/brave-devtools-mcp.js',
     '--browserUrl',
     browserUrl,
     '--experimentalStructuredContent',

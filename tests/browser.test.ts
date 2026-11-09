@@ -23,9 +23,9 @@ import {
 import {puppeteer, type Browser} from '../src/third_party/index.js';
 
 import {
-  createMockParsedArguments,
   createMockPuppeteerBrowser,
   createMockPuppeteerTarget,
+  createMockServerConfig,
 } from './mocks.js';
 import {serverHooks} from './server.js';
 import {createTempDir} from './utils.js';
@@ -69,10 +69,6 @@ async function runWithRetry(fn: () => Promise<void>) {
 }
 
 describe('browser', () => {
-  afterEach(() => {
-    sinon.restore();
-  });
-
   it('detects display does not crash', () => {
     BrowserManager.detectDisplay();
   });
@@ -94,12 +90,40 @@ describe('browser', () => {
       }
     });
 
+    it('preserves WebSocket connection credentials for Puppeteer while redacting logs', async () => {
+      const pptrBrowser = createMockPuppeteerBrowser();
+      const connectStub = sinon
+        .stub(puppeteer, 'connect')
+        .resolves(pptrBrowser);
+      const endpoint =
+        'wss://user:password@browser.example/devtools/browser/test?token=WS_SECRET_123';
+      const headers = {
+        Authorization: 'Bearer HEADER_SECRET_456',
+        'X-Test': 'visible',
+      };
+      const manager = new BrowserManager(
+        createMockServerConfig({wsEndpoint: endpoint, wsHeaders: headers}),
+      );
+
+      await manager.ensureBrowser();
+
+      sinon.assert.calledOnceWithMatch(connectStub, {
+        browserWSEndpoint: endpoint,
+        wsOptions: {headers},
+      });
+      assert.deepStrictEqual(
+        connectStub.firstCall.args[0].wsOptions?.headers,
+        headers,
+      );
+      await manager.close();
+    });
+
     it('launches a browser when no connect options are set and closes it on close()', async () => {
       const pptrBrowser = createMockPuppeteerBrowser();
       const launchStub = sinon.stub(puppeteer, 'launch').resolves(pptrBrowser);
       const connectStub = sinon.stub(puppeteer, 'connect');
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         headless: true,
         isolated: true,
         channel: 'nightly',
@@ -133,11 +157,36 @@ describe('browser', () => {
       sinon.assert.notCalled(pptrBrowser.disconnect);
     });
 
+    it('reads updated network restrictions from ServerConfig when launching', async () => {
+      const pptrBrowser = createMockPuppeteerBrowser();
+      const launchStub = sinon.stub(puppeteer, 'launch').resolves(pptrBrowser);
+      const config = createMockServerConfig({
+        headless: true,
+        isolated: true,
+      });
+      const manager = new BrowserManager(config);
+      config.commit(
+        createMockServerConfig({
+          headless: true,
+          isolated: true,
+          blockedUrlPattern: ['https://blocked.example.com/*'],
+        }),
+      );
+
+      await manager.ensureBrowser();
+
+      sinon.assert.calledOnceWithMatch(launchStub, {
+        blocklist: ['https://blocked.example.com/*'],
+        allowlist: undefined,
+      });
+      await manager.close();
+    });
+
     it('launches an explicit executablePath instead of the resolved Brave', async () => {
       const pptrBrowser = createMockPuppeteerBrowser();
       const launchStub = sinon.stub(puppeteer, 'launch').resolves(pptrBrowser);
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         isolated: true,
         channel: 'release',
         executablePath: '/path/to/brave',
@@ -159,11 +208,27 @@ describe('browser', () => {
         'brave-devtools-missing-executable',
       );
       const manager = new BrowserManager(
-        createMockParsedArguments({isolated: true}),
+        createMockServerConfig({isolated: true}),
       );
 
       await assert.rejects(manager.ensureBrowser(), /BRAVE_PATH points to/);
       sinon.assert.notCalled(launchStub);
+    });
+
+    it('disables Puppeteer signal handlers so close() can shut the browser down gracefully', async () => {
+      const pptrBrowser = createMockPuppeteerBrowser();
+      const launchStub = sinon.stub(puppeteer, 'launch').resolves(pptrBrowser);
+      const manager = new BrowserManager(
+        createMockServerConfig({isolated: true}),
+      );
+
+      await manager.ensureBrowser();
+
+      sinon.assert.calledOnceWithMatch(launchStub, {
+        handleSIGINT: false,
+        handleSIGTERM: false,
+        handleSIGHUP: false,
+      });
     });
 
     it('connects to a browser when browserUrl is set and disconnects on close()', async () => {
@@ -173,7 +238,7 @@ describe('browser', () => {
         .stub(puppeteer, 'connect')
         .resolves(pptrBrowser);
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         browserUrl: 'http://127.0.0.1:9222',
         channel: 'release',
       });
@@ -215,7 +280,7 @@ describe('browser', () => {
         .stub(puppeteer, 'connect')
         .resolves(pptrBrowser);
       const manager = new BrowserManager(
-        createMockParsedArguments({autoConnect: true, channel: 'nightly'}),
+        createMockServerConfig({autoConnect: true, channel: 'nightly'}),
       );
 
       await manager.ensureBrowser();
@@ -232,7 +297,7 @@ describe('browser', () => {
         .stub(puppeteer, 'connect')
         .resolves(createMockPuppeteerBrowser());
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         wsEndpoint: 'ws://127.0.0.1:9222/devtools/browser/abc',
         wsHeaders: {Authorization: 'Bearer token'},
       });
@@ -253,7 +318,7 @@ describe('browser', () => {
           .stub(puppeteer, 'connect')
           .resolves(createMockPuppeteerBrowser());
 
-        const args = createMockParsedArguments({
+        const args = createMockServerConfig({
           browserUrl: 'http://127.0.0.1:9222',
           categoryExtensions,
         });
@@ -273,7 +338,7 @@ describe('browser', () => {
       const {promise, resolve} = Promise.withResolvers<Browser>();
       const launchStub = sinon.stub(puppeteer, 'launch').returns(promise);
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         headless: true,
         isolated: true,
       });
@@ -299,7 +364,7 @@ describe('browser', () => {
         .onSecondCall()
         .resolves(pptrBrowser);
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         headless: true,
         isolated: true,
       });
@@ -325,7 +390,7 @@ describe('browser', () => {
         .onSecondCall()
         .resolves(pptrBrowser2);
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         headless: true,
         isolated: true,
       });
@@ -355,7 +420,7 @@ describe('browser', () => {
         browserClosed = true;
       });
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         headless: true,
         isolated: true,
       });
@@ -398,7 +463,7 @@ describe('browser', () => {
         return closeDeferred.promise;
       });
 
-      const args = createMockParsedArguments({
+      const args = createMockServerConfig({
         headless: true,
         isolated: true,
       });
@@ -434,7 +499,7 @@ describe('browser', () => {
           .resolves(secondBrowser);
 
         const manager = new BrowserManager(
-          createMockParsedArguments({headless: true, isolated: true}),
+          createMockServerConfig({headless: true, isolated: true}),
         );
 
         const first = await manager.ensureBrowser();
@@ -465,7 +530,7 @@ describe('browser', () => {
           .resolves(newBrowser);
 
         const manager = new BrowserManager(
-          createMockParsedArguments({headless: true, isolated: true}),
+          createMockServerConfig({headless: true, isolated: true}),
         );
 
         const first = await manager.ensureBrowser();
@@ -493,7 +558,7 @@ describe('browser', () => {
           .resolves(secondBrowser);
 
         const manager = new BrowserManager(
-          createMockParsedArguments({browserUrl: 'http://127.0.0.1:9222'}),
+          createMockServerConfig({browserUrl: 'http://127.0.0.1:9222'}),
         );
 
         const first = await manager.ensureBrowser();
@@ -527,7 +592,7 @@ describe('browser', () => {
           .resolves(freshBrowser);
 
         const manager = new BrowserManager(
-          createMockParsedArguments({browserUrl: 'http://127.0.0.1:9222'}),
+          createMockServerConfig({browserUrl: 'http://127.0.0.1:9222'}),
         );
 
         const ensurePromise1 = manager.ensureBrowser();
@@ -565,7 +630,7 @@ describe('browser', () => {
           .resolves(freshBrowser);
 
         const manager = new BrowserManager(
-          createMockParsedArguments({headless: true, isolated: true}),
+          createMockServerConfig({headless: true, isolated: true}),
         );
 
         const ensurePromise1 = manager.ensureBrowser();
@@ -597,7 +662,7 @@ describe('browser', () => {
         });
 
         const manager = new BrowserManager(
-          createMockParsedArguments({headless: true, isolated: true}),
+          createMockServerConfig({headless: true, isolated: true}),
         );
 
         const ensurePromise1 = manager.ensureBrowser();
@@ -646,14 +711,14 @@ describe('browser', () => {
           .resolves(secondBrowser);
 
         const manager = new BrowserManager(
-          createMockParsedArguments({headless: true, isolated: true}),
+          createMockServerConfig({headless: true, isolated: true}),
         );
 
         const first = await manager.ensureBrowser();
         assert.strictEqual(first, firstBrowser);
 
         // Simulates a getContext()-level timeout firing after ensureBrowser()
-        // had already resolved — e.g. McpContext.from()'s own CDP
+        // had already resolved — e.g. McpContext.ensureBrowser()'s own CDP
         // initialization hanging on a transport that died silently. Token
         // rotation alone wouldn't help here: there's no in-flight
         // connect()/launch() left to discard, #browser is already cached.
@@ -664,6 +729,42 @@ describe('browser', () => {
         const second = await manager.ensureBrowser();
         assert.strictEqual(second, secondBrowser);
         sinon.assert.calledTwice(launchStub);
+      });
+    });
+
+    it('includes remote debugging hint and preserves cause when autoConnect fails', async () => {
+      using userDataDir = createTempDir('brave-devtools-test-profile-');
+      fs.writeFileSync(
+        path.join(userDataDir.path, 'DevToolsActivePort'),
+        '9333\n/devtools/browser/brave-test\n',
+      );
+      const enoentError = Object.assign(
+        new Error(
+          "ENOENT: no such file or directory, open '/Users/test/Library/Application Support/BraveSoftware/Brave-Browser/DevToolsActivePort'",
+        ),
+        {code: 'ENOENT'},
+      );
+      const puppeteerError = new Error(
+        'Could not find DevToolsActivePort for brave at /Users/test/Library/Application Support/BraveSoftware/Brave-Browser/DevToolsActivePort',
+        {cause: enoentError},
+      );
+      sinon.stub(puppeteer, 'connect').rejects(puppeteerError);
+
+      const manager = new BrowserManager(
+        createMockServerConfig({
+          autoConnect: true,
+          userDataDir: userDataDir.path,
+        }),
+      );
+
+      await assert.rejects(manager.ensureBrowser(), err => {
+        assert.ok(err instanceof Error);
+        assert.strictEqual(
+          err.message,
+          'Could not connect to Brave. Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.',
+        );
+        assert.strictEqual(err.cause, puppeteerError);
+        return true;
       });
     });
   });
@@ -901,7 +1002,7 @@ describe('browser', () => {
         `temp-folder-${crypto.randomUUID()}`,
       );
       const manager1 = new BrowserManager(
-        createMockParsedArguments({
+        createMockServerConfig({
           headless: true,
           isolated: false,
           userDataDir: folderPath,
@@ -912,7 +1013,7 @@ describe('browser', () => {
       try {
         try {
           const manager2 = new BrowserManager(
-            createMockParsedArguments({
+            createMockServerConfig({
               headless: true,
               isolated: false,
               userDataDir: folderPath,
@@ -943,7 +1044,7 @@ describe('browser', () => {
         `temp-folder-${crypto.randomUUID()}`,
       );
       const manager = new BrowserManager(
-        createMockParsedArguments({
+        createMockServerConfig({
           headless: true,
           isolated: false,
           userDataDir: folderPath,
@@ -978,7 +1079,7 @@ describe('browser', () => {
         `temp-folder-${crypto.randomUUID()}`,
       );
       const launchManager = new BrowserManager(
-        createMockParsedArguments({
+        createMockServerConfig({
           headless: true,
           isolated: false,
           userDataDir: folderPath,
@@ -989,7 +1090,7 @@ describe('browser', () => {
       const browser = await launchManager.ensureBrowser();
       try {
         const manager = new BrowserManager(
-          createMockParsedArguments({
+          createMockServerConfig({
             userDataDir: folderPath,
             autoConnect: true,
           }),
@@ -1019,7 +1120,7 @@ describe('browser', () => {
         );
 
         const manager = new BrowserManager(
-          createMockParsedArguments({
+          createMockServerConfig({
             headless: true,
             isolated: true,
             executablePath: TEST_BROWSER_EXECUTABLE_PATH,
@@ -1064,7 +1165,7 @@ describe('browser', () => {
         );
 
         const manager = new BrowserManager(
-          createMockParsedArguments({
+          createMockServerConfig({
             headless: true,
             isolated: true,
             executablePath: TEST_BROWSER_EXECUTABLE_PATH,

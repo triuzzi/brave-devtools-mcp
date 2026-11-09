@@ -62,7 +62,7 @@ When the agent connects, Brave asks for permission. Click **Allow**.
 
 Use [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp) when your target browser is Chrome. Use `brave-mcp` when your target browser is Brave and you want Brave-native discovery, profiles, channels, naming, and privacy defaults without giving up upstream features.
 
-## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./CONTRIBUTING.md) | [Troubleshooting](./docs/troubleshooting.md) | [Design principles](./docs/design-principles.md)
+## [Tool reference](./docs/tool-reference.md) | [CLI](./docs/cli.md) | [Skills](#skills) | [Changelog](./CHANGELOG.md) | [Contributing](./CONTRIBUTING.md) | [Troubleshooting](./docs/troubleshooting.md) | [Design principles](./docs/design-principles.md)
 
 ## Key features
 
@@ -163,6 +163,70 @@ Brave asks you to allow the connection. After you click **Allow**, your MCP clie
 > [!NOTE]
 > The MCP server connects to Brave only when the MCP client first uses a tool that needs a browser, not when the client starts. Without `--autoConnect`, that is when the server launches its own Brave.
 
+## CLI
+
+The package also includes the `brave-devtools` CLI. Use it to control the browser from your terminal without MCP:
+
+```sh
+npm i brave-mcp@latest -g
+brave-devtools navigate_page 1 --url "https://brave.com"
+brave-devtools take_screenshot 1 --filePath screenshot.png
+brave-devtools stop
+```
+
+See the [CLI guide][cli] for all commands and options.
+
+## Skills
+
+The package includes [skills](./skills) that teach your agent how to use Brave DevTools:
+
+| Skill                                                     | Use it to                                      |
+| --------------------------------------------------------- | ---------------------------------------------- |
+| [`brave-devtools`](./skills/brave-devtools)               | Debug and automate pages with the MCP tools.   |
+| [`brave-devtools-cli`](./skills/brave-devtools-cli)       | Run the CLI and write shell scripts with it.   |
+| [`a11y-debugging`](./skills/a11y-debugging)               | Audit and fix accessibility issues.            |
+| [`cookie-debugging`](./skills/cookie-debugging)           | Debug cookies, sessions, and authentication.   |
+| [`debug-optimize-lcp`](./skills/debug-optimize-lcp)       | Debug and improve Largest Contentful Paint.    |
+| [`memory-leak-debugging`](./skills/memory-leak-debugging) | Find and fix memory leaks.                     |
+| [`troubleshooting`](./skills/troubleshooting)             | Fix connection problems between MCP and Brave. |
+
+### Install skills as a plugin
+
+A plugin installs the MCP server and all skills, including the CLI skill:
+
+- **Claude Code:** Run `/plugin marketplace add triuzzi/brave-devtools-mcp`, then `/plugin install brave-devtools-mcp@brave-devtools-plugins`.
+- **Copilot / VS Code:** Run **Chat: Install Plugin From Source** and enter `triuzzi/brave-devtools-mcp`.
+- **Gemini CLI:** Run `gemini extensions install --auto-update https://github.com/triuzzi/brave-devtools-mcp`.
+
+See the [Client Configurations Guide][client-configurations-guide] for more information.
+
+### Install skills manually
+
+If your agent does not support plugins, copy the skill folders into the skills directory of your agent. The npm package contains the skills:
+
+```sh
+npm i brave-mcp@latest -g
+# Example for Claude Code. Use the skills directory of your agent.
+mkdir -p ~/.claude/skills
+cp -R "$(npm root -g)/brave-mcp/skills/brave-devtools-cli" ~/.claude/skills/
+```
+
+> [!IMPORTANT]
+> The `brave-devtools-cli` skill requires the CLI. Install the package globally before you use the skill.
+
+### Keep skills up to date
+
+Skills describe the tools of a specific version. Update the skills each time you update the MCP server or the CLI. Outdated skills can tell your agent to use tools or parameters that changed.
+
+- **Plugins:** Use the update command of the plugin manager of your agent. The Gemini CLI command above enables automatic updates with `--auto-update`.
+- **Manual installs:** Update the package, then copy the skill folders again:
+
+```sh
+npm i brave-mcp@latest -g
+mkdir -p ~/.claude/skills
+cp -R "$(npm root -g)/brave-mcp/skills/brave-devtools-cli" ~/.claude/skills/
+```
+
 ## Tools
 
 If you run into any issues, checkout our [troubleshooting guide][troubleshooting].
@@ -171,6 +235,8 @@ See the full [Tool reference][tool-reference] for a complete list of all support
 ## Configuration
 
 Find the complete list of server parameters (e.g., `--headless`, `--isolated`, `--slim`) and how to configure WebSocket connections in the [Configuration Guide][configuration-guide].
+
+For basic browser tasks only, the `--slim` flag exposes a reduced set of tools. See the [Slim tool reference](./docs/slim-tool-reference.md).
 
 ## Advanced usage
 
@@ -187,6 +253,8 @@ If you are developing agentic tooling and want to provide an integrated browser 
 For a reference implementation, see the [Gemini CLI browser agent documentation](https://geminicli.com/docs/core/subagents/#browser-agent).
 
 [advanced-usage-guide]: ./docs/advanced-usage.md
+[cli]: ./docs/cli.md
+[skills]: #skills
 [client-configurations-guide]: ./docs/client-configurations.md
 [configuration-guide]: ./docs/configuration.md
 [tool-reference]: ./docs/tool-reference.md

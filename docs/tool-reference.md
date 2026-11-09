@@ -30,7 +30,7 @@
 - **[Network](#network)** (2 tools)
   - [`get_network_request`](#get_network_request)
   - [`list_network_requests`](#list_network_requests)
-- **[Debugging](#debugging)** (9 tools)
+- **[Debugging](#debugging)** (10 tools)
   - [`evaluate_script`](#evaluate_script)
   - [`get_console_message`](#get_console_message)
   - [`get_css_styles`](#get_css_styles)
@@ -38,6 +38,7 @@
   - [`list_console_messages`](#list_console_messages)
   - [`screencast_start`](#screencast_start)
   - [`screencast_stop`](#screencast_stop)
+  - [`set_logpoints`](#set_logpoints)
   - [`take_screenshot`](#take_screenshot)
   - [`take_snapshot`](#take_snapshot)
 - **[Memory](#memory)** (14 tools)
@@ -72,6 +73,8 @@
   - [`install_pwa`](#install_pwa)
   - [`launch_pwa`](#launch_pwa)
   - [`uninstall_pwa`](#uninstall_pwa)
+- **[WebAuthn](#webauthn)** (1 tools)
+  - [`configure_webauthn`](#configure_webauthn)
 
 ## Input automation
 
@@ -152,7 +155,7 @@
 
 ### `press_key`
 
-**Description:** Press a key or key combination. Use this when other input methods like [`fill`](#fill)() cannot be used (e.g., keyboard shortcuts, navigation keys, or special key combinations).
+**Description:** Press a key or key combination. Use this when other input methods like [`fill`](#fill)() cannot be used (e.g., keyboard shortcuts, navigation keys, or special key combinations). Note: On macOS, native &lt;select&gt; elements cannot be operated with ArrowDown/Enter via [`press_key`](#press_key); use [`fill`](#fill)() on the combobox or [`click`](#click)() on the option instead.
 
 **Parameters:**
 
@@ -263,13 +266,14 @@
 
 ### `wait_for`
 
-**Description:** Wait for the specified text to appear on the selected page.
+**Description:** Wait for the specified text to appear on the selected page. By default, hidden text is also matched. Set visible to true to wait until the matched text is visible.
 
 **Parameters:**
 
 - **pageId** (number) **(required)**: Targets a specific page by ID.
-- **text** (array) **(required)**: Non-empty list of texts. Resolves when any value appears on the page.
+- **text** (array) **(required)**: Non-empty list of texts. Resolves when any value matches an accessible name exactly or is a substring of DOM text. Matching is case-sensitive. DOM text preserves spaces and newlines, unlike snapshot text which may normalize whitespace. Use the original whitespace or a shorter distinctive substring.
 - **timeout** (integer) _(optional)_: Maximum wait time in milliseconds. If set to 0, the default timeout will be used.
+- **visible** (boolean) _(optional)_: If true, wait until the matching text is visible. By default, hidden text also counts.
 
 ---
 
@@ -369,7 +373,7 @@
 
 - **pageId** (number) **(required)**: Targets a specific page by ID.
 - **includePreservedRequests** (boolean) _(optional)_: Set to true to return the preserved requests over the last 3 navigations.
-- **pageIdx** (integer) _(optional)_: Page number to return (0-based). When omitted, returns the first page.
+- **pageIdx** (integer) _(optional)_: Page number to return (0-based). When omitted, returns the first page. Ignored unless pageSize is set.
 - **pageSize** (integer) _(optional)_: Maximum number of requests to return. When omitted, returns all requests.
 - **resourceTypes** (array) _(optional)_: Filter requests to only return requests of the specified resource types. When omitted or empty, returns all requests.
 
@@ -447,9 +451,9 @@ Results are paginated (10 rules per page by default); use pageIdx to page throug
 - **pageId** (number) **(required)**: Targets a specific page by ID.
 - **includePreservedMessages** (boolean) _(optional)_: Set to true to return the preserved messages over the last 3 navigations.
 - **includeStackTraces** (boolean) _(optional)_: Set to true to include the stack trace for each message when available. Increases the response size.
-- **pageIdx** (integer) _(optional)_: Page number to return (0-based). When omitted, returns the first page.
+- **pageIdx** (integer) _(optional)_: Page number to return (0-based). When omitted, returns the first page. Ignored unless pageSize is set.
 - **pageSize** (integer) _(optional)_: Maximum number of messages to return. When omitted, returns all messages.
-- **serviceWorkerId** (string) _(optional)_: Filter messages to only return messages of the specified service worker.
+- **serviceWorkerId** (string) _(optional)_: Filter messages by the service worker ID shown by [`list_pages`](#list_pages) (sw-N).
 - **types** (array) _(optional)_: Filter messages to only return messages of the specified resource types. When omitted or empty, returns all messages.
 
 ---
@@ -471,6 +475,17 @@ Results are paginated (10 rules per page by default); use pageIdx to page throug
 
 **Parameters:**
 
+- **pageId** (number) **(required)**: Targets a specific page by ID.
+
+---
+
+### `set_logpoints`
+
+**Description:** Set the complete set of logpoints of the selected page: logpoints not in the list are removed, new ones are added, and an empty list removes all. A logpoint logs expressions to the console every time a line executes, without pausing or changing the source, like logpoints in the DevTools Sources panel. Locations are script URLs or original source files resolved through source maps (not available with --no-source-maps; scripts in workers and out-of-process iframes are not supported). A location in a generated script moves to its original source line when a source map covers it, and locations on the same line become one logpoint with the last expression. Output appears in [`list_console_messages`](#list_console_messages); an expression that throws produces an error message without text. Logpoints survive reloads and navigations until removed or the page is closed. The response lists the resulting logpoints and where they are bound.
+
+**Parameters:**
+
+- **logpoints** (array) **(required)**: Logpoints formatted as &lt;url&gt;:&lt;lineNumber&gt;[:&lt;columnNumber&gt;] &lt;expression&gt;. The url is a script URL or the path of an original source file from a source map, exact or as a path suffix (e.g. "src/app.ts"). Line and column numbers are 1-based in the coordinates of the url; a line without executable code moves to the next possible location. The expression is evaluated like console.log() arguments in the scope of the location, where local variables are accessible by their original names, and runs before the line executes, so a variable declared on that line is not set yet. [`list_console_messages`](#list_console_messages) shows objects as [object Object]: read them with [`get_console_message`](#get_console_message), or log JSON.stringify(value) for plain data. Example: "src/cart.ts:42 'cart total:', cart.total, cart.items.length". Pass an empty array to remove all logpoints.
 - **pageId** (number) **(required)**: Targets a specific page by ID.
 
 ---
@@ -525,8 +540,8 @@ in the DevTools Elements panel (if any).
 
 - **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
 - **maxNameLength** (integer) _(optional)_: Maximum length of names before truncation. Defaults to 100.
-- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0.
-- **pageSize** (integer) _(optional)_: The number of contexts to return per page. Defaults to 20.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: The maximum number of items to return per page. Defaults to 50.
 - **retainedSize** (string) _(optional)_: Inclusive range for the dead-field score of a context (e.g. "10KB", "1MB-2MB", "-1MB", or "1MB-"). A single value is treated as a minimum.
 - **scopeInfoNodeId** (integer) _(optional)_: Only return contexts declared by the scope with this ScopeInfo node id, as reported in the scope header of a previous call.
 
@@ -552,8 +567,8 @@ in the DevTools Elements panel (if any).
 - **currentFilePath** (string) **(required)**: A path to the current .heapsnapshot file (later snapshot).
 - **classIndex** (number) _(optional)_: Optional 0-based index of the class in the summary list to filter results, showing individual objects.
 - **maxNameLength** (integer) _(optional)_: Maximum length of names before truncation. Defaults to 100.
-- **pageIdx** (integer) _(optional)_: The page index for pagination.
-- **pageSize** (integer) _(optional)_: The page size for pagination.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: The maximum number of items to return per page. Defaults to 50.
 
 ---
 
@@ -568,8 +583,8 @@ in the DevTools Elements panel (if any).
 - **filterName** (enum: "objectsRetainedByDetachedDomNodes", "objectsRetainedByConsole", "objectsRetainedByEventHandlers", "objectsRetainedByContexts", "sharedNativeContext", "noNativeContext", "attributedToSpecificNativeContext") _(optional)_: An optional filter to apply to the nodes.
 - **maxNameLength** (integer) _(optional)_: Maximum length of names before truncation. Defaults to 100.
 - **objectId** (number) _(optional)_: The object ID (nodeId) of the specific native context to filter by when filterName is attributedToSpecificNativeContext.
-- **pageIdx** (integer) _(optional)_: The page index for pagination.
-- **pageSize** (integer) _(optional)_: The page size for pagination.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: The maximum number of items to return per page. Defaults to 50.
 
 ---
 
@@ -583,8 +598,8 @@ in the DevTools Elements panel (if any).
 - **filterName** (enum: "objectsRetainedByDetachedDomNodes", "objectsRetainedByConsole", "objectsRetainedByEventHandlers", "objectsRetainedByContexts", "sharedNativeContext", "noNativeContext", "attributedToSpecificNativeContext") _(optional)_: An optional filter to apply to the aggregates.
 - **maxNameLength** (integer) _(optional)_: Maximum length of names before truncation. Defaults to 100.
 - **objectId** (number) _(optional)_: The object ID (nodeId) of the specific native context to filter by when filterName is attributedToSpecificNativeContext.
-- **pageIdx** (integer) _(optional)_: The page index for pagination of aggregates.
-- **pageSize** (integer) _(optional)_: The page size for pagination of aggregates.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: The maximum number of items to return per page. Defaults to 50.
 
 ---
 
@@ -608,8 +623,8 @@ in the DevTools Elements panel (if any).
 
 - **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
 - **maxNameLength** (integer) _(optional)_: Maximum length of names before truncation. Defaults to 100.
-- **pageIdx** (integer) _(optional)_: The page index for pagination.
-- **pageSize** (integer) _(optional)_: The page size for pagination.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: The maximum number of items to return per page. Defaults to 50.
 
 ---
 
@@ -623,8 +638,8 @@ in the DevTools Elements panel (if any).
 - **nodeId** (number) **(required)**: The node ID to get outgoing edges for.
 - **excludePrimitives** (boolean) _(optional)_: Whether to exclude primitive target nodes. Default is true.
 - **maxNameLength** (integer) _(optional)_: Maximum length of names before truncation. Defaults to 100.
-- **pageIdx** (integer) _(optional)_: The page index for pagination.
-- **pageSize** (integer) _(optional)_: The page size for pagination.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: The maximum number of items to return per page. Defaults to 50.
 - **retainedSize** (string) _(optional)_: Inclusive retained size range (e.g. "1MB-2MB", "-1MB", or "1MB-") for target nodes. A single value is treated as a minimum. Currently, only the lower bound is applied.
 - **sortBy** (enum: "retainedSize", "selfSize", "name") _(optional)_: Sort order for edges. Default is retainedSize.
 
@@ -651,8 +666,8 @@ in the DevTools Elements panel (if any).
 - **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
 - **nodeId** (number) **(required)**: The node ID to get retainers for.
 - **maxNameLength** (integer) _(optional)_: Maximum length of names before truncation. Defaults to 100.
-- **pageIdx** (integer) _(optional)_: The page index for pagination.
-- **pageSize** (integer) _(optional)_: The page size for pagination.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: The maximum number of items to return per page. Defaults to 50.
 
 ---
 
@@ -693,8 +708,8 @@ in the DevTools Elements panel (if any).
 - **isDetached** (boolean) _(optional)_: Whether to filter for detached DOM nodes.
 - **maxNameLength** (integer) _(optional)_: Maximum length of names before truncation. Defaults to 100.
 - **nodeType** (string) _(optional)_: Optional V8 node type filter (e.g. object, closure, string, array, code).
-- **pageIdx** (integer) _(optional)_: The page index for pagination.
-- **pageSize** (integer) _(optional)_: The page size for pagination.
+- **pageIdx** (integer) _(optional)_: The zero-based page index. Defaults to 0 (the first page).
+- **pageSize** (integer) _(optional)_: The maximum number of items to return per page. Defaults to 50.
 - **propertyName** (string) _(optional)_: Optional property name filter for outgoing reference edges.
 - **retainedSize** (string) _(optional)_: Inclusive retained size range (e.g. "1MB-2MB", "-1MB", or "1MB-"). A single value is treated as a minimum.
 - **selfSize** (string) _(optional)_: Inclusive self size range (e.g. "1MB-2MB", "-1MB", or "1MB-"). A single value is treated as a minimum.
@@ -856,5 +871,25 @@ third-party developer tools with additional functionality. (requires flag: --cat
 **Parameters:**
 
 - **manifestId** (string) **(required)**: The manifest ID of the web app: the resolved `id` member of its manifest. If `id` is omitted, it defaults to the resolved `start_url` (e.g. "https://example.com/"). See https://w3c.github.io/manifest/#id-member.
+
+---
+
+## WebAuthn
+
+> NOTE: The WebAuthn category is not active by default. Use the '--categoryWebauthn' flag.
+
+### `configure_webauthn`
+
+**Description:** Adds a virtual WebAuthn authenticator to the page. Call this before the page calls navigator.credentials. It answers navigator.credentials.create() and get() and is removed when the page closes. Omitted parameters keep their current values. Changing protocol, transport, hasResidentKey or hasUserVerification replaces the authenticator and deletes its credentials. enabled=false ignores other parameters and removes all authenticators on the page. (requires flag: --categoryWebauthn=true)
+
+**Parameters:**
+
+- **enabled** (boolean) **(required)**: Set to false to remove all virtual authenticators from the page.
+- **pageId** (number) **(required)**: Targets a specific page by ID.
+- **hasResidentKey** (boolean) _(optional)_: Whether the authenticator can store discoverable credentials (passkeys). Default: true. u2f does not support it, so it is false for u2f.
+- **hasUserVerification** (boolean) _(optional)_: Whether the authenticator supports user verification (PIN or biometrics). Default: true. u2f does not support it, so it is false for u2f.
+- **isUserVerified** (boolean) _(optional)_: Whether user verification succeeds. Set to false to test a failed verification. Default: true.
+- **protocol** (enum: "ctap2", "u2f") _(optional)_: The authenticator protocol. Default: ctap2.
+- **transport** (enum: "internal", "usb", "nfc", "ble", "hybrid") _(optional)_: "internal" is a platform authenticator such as Touch ID or Windows Hello; the others are roaming security keys. Default: internal.
 
 ---

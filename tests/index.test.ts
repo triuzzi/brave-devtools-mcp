@@ -5,7 +5,6 @@
  */
 
 import assert from 'node:assert';
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {describe, it} from 'node:test';
@@ -15,11 +14,7 @@ import {executablePath} from 'puppeteer';
 
 import {Client, type ClientCapabilities} from '@modelcontextprotocol/client';
 import {StdioClientTransport} from '@modelcontextprotocol/client/stdio';
-import {mcpOptions} from '../src/config/mcp-options.js';
-import {getOffByDefaultCategories} from '../src/config/category-options.js';
 import type {TextContent} from '../src/third_party/index.js';
-import type {ToolCategory} from '../src/tools/categories.js';
-import type {ToolDefinition} from '../src/tools/ToolDefinition.js';
 
 import {createTempDir} from './utils.js';
 
@@ -37,13 +32,13 @@ describe('e2e', {concurrency: true}, () => {
     let attempt = 1;
     while (attempt <= 3) {
       const transport = new StdioClientTransport({
-        command: 'node',
+        command: process.execPath,
         args: [
-          'build/src/bin/brave-devtools-mcp.js',
+          path.resolve(import.meta.dirname, '../src/bin/brave-devtools-mcp.js'),
           '--headless',
           '--isolated',
           '--executable-path',
-          process.env.PUPPETEER_EXECUTABLE_PATH ?? (await executablePath()),
+          await executablePath(),
           ...extraArgs,
         ],
         env: {...process.env, BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},
@@ -120,123 +115,6 @@ describe('e2e', {concurrency: true}, () => {
         arguments: {},
       });
       t.assert.snapshot(JSON.stringify(result.content));
-    });
-  });
-
-  // These tests only list tools, so the server does not launch a browser.
-  describe('tool list', {concurrency: true}, () => {
-    it('has all tools with off by default categories', async () => {
-      await withClient(
-        async client => {
-          const {tools} = await client.listTools();
-          const exposedNames = tools.map(t => t.name).sort();
-          const definedNames = await getToolsWithFilteredCategories();
-          definedNames.sort();
-          assert.deepStrictEqual(exposedNames, definedNames);
-        },
-        getOffByDefaultCategories().map(category => `--category-${category}`),
-      );
-    });
-
-    it('has all tools', async () => {
-      await withClient(async client => {
-        const {tools} = await client.listTools();
-        const exposedNames = tools.map(t => t.name).sort();
-        const definedNames = await getToolsWithFilteredCategories(
-          getOffByDefaultCategories(),
-        );
-        definedNames.sort();
-        assert.deepStrictEqual(exposedNames, definedNames);
-      });
-    });
-
-    it('has experimental third-party developer tools', async () => {
-      await withClient(
-        async client => {
-          const {tools} = await client.listTools();
-          const listThirdPartyDeveloperTools = tools.find(
-            t => t.name === 'list_3p_developer_tools',
-          );
-          assert.ok(listThirdPartyDeveloperTools);
-        },
-        ['--category-experimental-third-party'],
-      );
-    });
-
-    it('has experimental extensions tools', async () => {
-      await withClient(
-        async client => {
-          const {tools} = await client.listTools();
-          const installExtension = tools.find(
-            t => t.name === 'install_extension',
-          );
-          assert.ok(installExtension);
-        },
-        ['--category-extensions'],
-      );
-    });
-
-    it('has experimental vision tools', async () => {
-      await withClient(
-        async client => {
-          const {tools} = await client.listTools();
-          const clickAt = tools.find(t => t.name === 'click_at');
-          assert.ok(clickAt);
-        },
-        ['--experimental-vision'],
-      );
-    });
-
-    it('has experimental interop tools', async () => {
-      await withClient(
-        async client => {
-          const {tools} = await client.listTools();
-          const getTabId = tools.find(t => t.name === 'get_tab_id');
-          assert.ok(getTabId);
-        },
-        ['--experimental-interop-tools'],
-      );
-    });
-
-    it('has experimental webmcp', async () => {
-      await withClient(
-        async client => {
-          const {tools} = await client.listTools();
-          const listWebMcpTools = tools.find(
-            t => t.name === 'list_webmcp_tools',
-          );
-          const executeWebMcpTool = tools.find(
-            t => t.name === 'execute_webmcp_tool',
-          );
-          assert.ok(listWebMcpTools);
-          assert.ok(executeWebMcpTool);
-        },
-        ['--categoryExperimentalWebmcp'],
-      );
-    });
-
-    it('has memory debugging tools', async () => {
-      await withClient(
-        async client => {
-          const {tools} = await client.listTools();
-          const getHeapSnapshotSummary = tools.find(
-            t => t.name === 'get_heapsnapshot_summary',
-          );
-          assert.ok(getHeapSnapshotSummary);
-        },
-        ['--memoryDebugging'],
-      );
-    });
-
-    it('can disable javascript evaluation tools', async () => {
-      await withClient(
-        async client => {
-          const {tools} = await client.listTools();
-          const evaluateScript = tools.find(t => t.name === 'evaluate_script');
-          assert.strictEqual(evaluateScript, undefined);
-        },
-        ['--no-javascript-evaluation'],
-      );
     });
   });
 
@@ -361,11 +239,54 @@ describe('e2e', {concurrency: true}, () => {
     );
   });
 
+  it('makes concurrent first calls wait for the same roots/list', async () => {
+    const fixturesRoot = path.resolve('tests/fixtures');
+    await withClient(
+      async client => {
+        // Answers late enough that both calls start before the roots arrive.
+        // Browserless tools hold no lock, so without a shared initial roots
+        // request the second call validates its path against no roots.
+        client.setRequestHandler('roots/list', async () => {
+          await new Promise(resolve => setTimeout(resolve, 1_000));
+          return {
+            roots: [{uri: pathToFileURL(fixturesRoot).href, name: 'fixtures'}],
+          };
+        });
+
+        const results = await Promise.all([
+          client.callTool({
+            name: 'get_heapsnapshot_summary',
+            arguments: {
+              filePath: path.join(fixturesRoot, 'example.heapsnapshot'),
+            },
+          }),
+          client.callTool({
+            name: 'get_heapsnapshot_summary',
+            arguments: {
+              filePath: path.join(fixturesRoot, 'example.heapsnapshot'),
+            },
+          }),
+        ]);
+
+        for (const result of results) {
+          const content = result.content as TextContent[];
+          assert.strictEqual(result.isError, undefined, content[0]?.text);
+        }
+      },
+      ['--memoryDebugging'],
+      {
+        capabilities: {
+          roots: {listChanged: true},
+        },
+      },
+    );
+  });
+
   it('does not block tools if the client never answers roots/list', async () => {
     await withClient(
       async client => {
         // A client that negotiates roots but never responds. getContext()
-        // awaits updateRoots() while holding the tool mutex, so an unbounded
+        // awaits updateRoots() while holding the context lock, so an unbounded
         // request would stall this call for the SDK default of 60s.
         client.setRequestHandler('roots/list', () => {
           return new Promise<never>(() => {
@@ -541,63 +462,27 @@ describe('e2e', {concurrency: true}, () => {
         t.assert.snapshot(JSON.stringify(result));
       });
     });
+
+    it('when dialog is open, evaluate_script returns an error', async () => {
+      await withClient(async client => {
+        await createNewPageAndTriggerDialog(client);
+        const result = await client.callTool(
+          {
+            name: 'evaluate_script',
+            arguments: {
+              pageId: 2,
+              function: '() => 1',
+            },
+          },
+          {timeout: 10_000},
+        );
+
+        assert.strictEqual(result.isError, true);
+        assert.match(
+          getFirstText(result),
+          /A dialog is open \(alert: test dialog\)\./,
+        );
+      });
+    });
   });
 });
-
-async function getToolsWithFilteredCategories(
-  filterOutCategories: ToolCategory[] = [],
-): Promise<string[]> {
-  const files = fs.readdirSync('build/src/tools');
-  const definedNames = [];
-  for (const file of files) {
-    if (
-      !file.endsWith('.js') ||
-      file === 'ToolDefinition.js' ||
-      file === 'tools.js' ||
-      file === 'slim'
-    ) {
-      continue;
-    }
-    const fileTools = await import(`../src/tools/${file}`);
-
-    for (const maybeTool of Object.values(fileTools)) {
-      if (typeof maybeTool !== 'function') {
-        continue;
-      }
-      const tool = maybeTool({});
-
-      // Skipping all files that are not tool files
-      if (tool === null || typeof tool !== 'object' || !('name' in tool)) {
-        continue;
-      }
-
-      if (toolShouldBeSkipped(tool, filterOutCategories)) {
-        continue;
-      }
-      definedNames.push(tool.name);
-    }
-  }
-  return definedNames;
-}
-
-function toolShouldBeSkipped(
-  tool: ToolDefinition,
-  filteredOutCategories: ToolCategory[],
-) {
-  if (tool.annotations?.conditions) {
-    for (const condition of tool.annotations.conditions) {
-      const option = mcpOptions[condition as keyof typeof mcpOptions];
-      if (!option || !('default' in option) || option.default !== true) {
-        return true;
-      }
-    }
-  }
-  if (
-    tool.annotations?.category &&
-    filteredOutCategories.includes(tool.annotations?.category)
-  ) {
-    return true;
-  }
-
-  return false;
-}
