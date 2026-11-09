@@ -50,6 +50,8 @@ When the agent connects, Brave asks for permission. Click **Allow**.
 
 `--autoConnect` attaches to Brave Release unless you add `--channel beta` or `--channel nightly`. To keep the agent out of your everyday browser, leave out `--autoConnect`: the server then launches its own Brave with a dedicated profile.
 
+The same server is also published as [`brave-devtools-mcp`](https://www.npmjs.com/package/brave-devtools-mcp), so `npx brave-devtools-mcp@latest` works identically if you prefer a name that matches upstream's `chrome-devtools-mcp`.
+
 ## Why use this instead of Chrome DevTools MCP?
 
 | Capability                               | `brave-mcp`                             | `chrome-devtools-mcp`                |

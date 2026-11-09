@@ -11,6 +11,8 @@ npm i brave-mcp@latest -g
 brave-devtools status # check if install worked.
 ```
 
+The same package is also published as `brave-devtools-mcp`, so `npm i brave-devtools-mcp@latest -g` installs the same CLI.
+
 The CLI enables unrestricted filesystem access by default. Use `--workspace`
 to limit file tools to specific directories. Repeat the flag for more than one
 directory.

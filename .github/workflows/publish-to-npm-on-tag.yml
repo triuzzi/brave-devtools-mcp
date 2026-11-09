@@ -2,6 +2,12 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      alias-version:
+        description: 'Publish only the brave-devtools-mcp alias for an already-released version (e.g. 1.12.0). Leave empty for a normal release.'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -10,6 +16,7 @@ permissions:
 jobs:
   verify-release:
     name: Verify release
+    if: ${{ inputs.alias-version == '' }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release-metadata.outputs.tag }}
@@ -47,6 +54,16 @@ jobs:
           fi
           if ! grep -Eq 'E404|404 Not Found' "$NPM_ERROR_FILE"; then
             cat "$NPM_ERROR_FILE"
+            exit 1
+          fi
+
+          ALIAS_ERROR_FILE=$(mktemp)
+          if npm view "brave-devtools-mcp@${VERSION}" version --prefer-online > /dev/null 2> "$ALIAS_ERROR_FILE"; then
+            echo "brave-devtools-mcp@${VERSION} is already published."
+            exit 1
+          fi
+          if ! grep -Eq 'E404|404 Not Found' "$ALIAS_ERROR_FILE"; then
+            cat "$ALIAS_ERROR_FILE"
             exit 1
           fi
 
@@ -111,6 +128,7 @@ jobs:
 
   create-draft-release:
     name: Create draft GitHub release
+    if: ${{ inputs.alias-version == '' }}
     needs: verify-release
     runs-on: ubuntu-latest
     permissions:
@@ -129,6 +147,7 @@ jobs:
 
   publish-to-npm:
     needs: create-draft-release
+    if: ${{ inputs.alias-version == '' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Required for OIDC
@@ -162,12 +181,78 @@ jobs:
         run: |
           npm publish --provenance --access public
 
+      - name: Publish brave-devtools-mcp alias
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          node -e "const fs = require('node:fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.name = 'brave-devtools-mcp'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+          npm publish --provenance --access public
+          npm view "brave-devtools-mcp@${VERSION}" version
+
+      - name: Verify both packages
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          for package in brave-mcp brave-devtools-mcp; do
+            npm view "${package}@${VERSION}" version
+          done
+
+  publish-npm-alias:
+    name: Publish brave-devtools-mcp alias
+    if: ${{ inputs.alias-version != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for OIDC
+      contents: read
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/v${{ inputs.alias-version }}
+          fetch-depth: 2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          cache: npm
+          node-version-file: '.nvmrc'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync DevTools dependencies
+        shell: bash
+        run: npm run gclient-sync
+
+      - name: Build and bundle
+        run: npm run bundle
+        env:
+          NODE_ENV: 'production'
+
+      - name: Publish brave-devtools-mcp alias
+        env:
+          ALIAS_VERSION: ${{ inputs.alias-version }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${VERSION}" != "${ALIAS_VERSION}" ]; then
+            echo "package.json version ${VERSION} does not match the requested ${ALIAS_VERSION}."
+            exit 1
+          fi
+          if npm view "brave-devtools-mcp@${VERSION}" version --prefer-online > /dev/null 2>&1; then
+            echo "brave-devtools-mcp@${VERSION} is already published."
+            exit 1
+          fi
+          node -e "const fs = require('node:fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.name = 'brave-devtools-mcp'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+          npm publish --provenance --access public
+          npm view "brave-devtools-mcp@${VERSION}" version
+
   publish-to-mcp-registry:
     needs: publish-to-npm
+    if: ${{ inputs.alias-version == '' }}
     uses: ./.github/workflows/publish-to-mcp-registry-on-tag.yml
 
   publish-github-release:
     name: Publish GitHub release
+    if: ${{ inputs.alias-version == '' }}
     needs:
       - verify-release
       - publish-to-mcp-registry
