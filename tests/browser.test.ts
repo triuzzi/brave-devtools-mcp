@@ -732,7 +732,12 @@ describe('browser', () => {
       });
     });
 
-    it('includes remote debugging hint and preserves cause when autoConnect fails without userDataDir', async () => {
+    it('includes remote debugging hint and preserves cause when autoConnect fails', async () => {
+      using userDataDir = createTempDir('brave-devtools-test-profile-');
+      fs.writeFileSync(
+        path.join(userDataDir.path, 'DevToolsActivePort'),
+        '9333\n/devtools/browser/brave-test\n',
+      );
       const enoentError = Object.assign(
         new Error(
           "ENOENT: no such file or directory, open '/Users/test/Library/Application Support/BraveSoftware/Brave-Browser/DevToolsActivePort'",
@@ -748,7 +753,7 @@ describe('browser', () => {
       const manager = new BrowserManager(
         createMockServerConfig({
           autoConnect: true,
-          channel: 'release',
+          userDataDir: userDataDir.path,
         }),
       );
 
