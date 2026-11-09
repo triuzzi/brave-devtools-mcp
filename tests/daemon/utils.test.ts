@@ -15,7 +15,7 @@ import {afterEach, beforeEach, describe, it} from 'node:test';
 
 import sinon from 'sinon';
 
-import type {ParsedArguments} from '../../src/config/ConfigParser.js';
+import type {ParsedArguments} from '../../src/config/mcp-options.js';
 import {
   DAEMON_SCRIPT_PATH,
   serializeArgs,
@@ -123,6 +123,21 @@ describe('serializeArgs', () => {
     } as unknown as ParsedArguments;
     const result = serializeArgs(options, argv);
     assert.deepStrictEqual(result, ['--foo=string', '--bar=42']);
+  });
+
+  it('should serialize object values as JSON', () => {
+    const options: Record<string, YargsOptions> = {wsHeaders: {}};
+    const argv = {
+      wsHeaders: {
+        Authorization: 'Bearer token',
+      },
+      _: [],
+      $0: 'test',
+    } as unknown as ParsedArguments;
+    const result = serializeArgs(options, argv);
+    assert.deepStrictEqual(result, [
+      '--ws-headers={"Authorization":"Bearer token"}',
+    ]);
   });
 
   it('should convert camelCase keys to kebab-case', () => {
@@ -286,7 +301,6 @@ describe('daemon pid handling', () => {
   });
 
   afterEach(() => {
-    sinon.restore();
     if (savedXdgRuntimeDir === undefined) {
       delete process.env['XDG_RUNTIME_DIR'];
     } else {

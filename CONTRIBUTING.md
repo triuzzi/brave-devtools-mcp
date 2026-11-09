@@ -63,13 +63,14 @@ Check that you are using node version specified in .nvmrc, then run following co
 git clone https://github.com/triuzzi/brave-devtools-mcp.git
 cd brave-devtools-mcp
 npm ci
+npm run gclient-sync
 npm run build
 ```
 
 ### Testing with @modelcontextprotocol/inspector
 
 ```sh
-npx @modelcontextprotocol/inspector node ./build/src/bin/brave-devtools-mcp.js
+npx @modelcontextprotocol/inspector node ./out/Default/gen/src/bin/brave-devtools-mcp.js
 ```
 
 ### Testing with an MCP client
@@ -82,7 +83,7 @@ Add the MCP server to your client's config.
     "brave-devtools": {
       "command": "node",
       "args": [
-        "/<path-to-brave-devtools-mcp>/build/src/bin/brave-devtools-mcp.js"
+        "/<path-to-brave-devtools-mcp>/out/Default/gen/src/bin/brave-devtools-mcp.js"
       ]
     }
   }
@@ -99,7 +100,7 @@ Usually VS Code automatically detects and forwards `6274` but fails to detect `6
 To write debug logs to `log.txt` in the working directory, run with the following commands:
 
 ```sh
-npx @modelcontextprotocol/inspector node ./build/src/bin/brave-devtools-mcp.js --log-file=/your/desired/path/log.txt
+npx @modelcontextprotocol/inspector node ./out/Default/gen/src/bin/brave-devtools-mcp.js --log-file=/your/desired/path/log.txt
 ```
 
 You can use the `NODE_DEBUG` environment variable as usual to control categories that are logged.

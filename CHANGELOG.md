@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.12.0](https://github.com/triuzzi/brave-devtools-mcp/compare/v1.11.0...v1.12.0) (2026-11-09)
+
+### Upstream sync
+
+* sync with Chrome DevTools MCP 1.12.0 plus the commits that landed on upstream `main` after
+  that release: the build moved from `tsc` to GN and Ninja, `logpoints` built on the DevTools
+  `BreakpointManager`, the `configure_webauthn` tool for virtual authenticators, and Zod
+  validation of JSON-object and `press_key` parameters
+* the build output moved to `out/Default/gen/src`, and `npm run gclient-sync` now syncs the
+  DevTools dependencies before a build; the npm package ships the same binaries as before
+* independent tool calls run in parallel through a `TaskRunner`, including page-scoped tools on
+  different pages
+* configuration is layered in a `ServerConfig` with `--watchConfig` reloading: URL patterns
+  reload live, restart-required options are reported, and disabled feature state is released on
+  reload
+* heap-snapshot tools paginate by default, `compare_heapsnapshots` sorts objects by self size and
+  paginates the detailed diff, and heap snapshots can be analyzed without a browser connection
+* `--maxNavigationSaved` configures the retained navigation history, `wait_for` can match visible
+  text and finds text in dynamically attached iframes, and slim-mode screenshots take a filepath
+* a launched browser keeps its own signal handlers disabled so `close()` shuts it down gracefully;
+  WebSocket headers are redacted from connection logs; `0.0.0.0`, `[::]` and IPv4-mapped IPv6
+  loopback endpoints count as local
+* dialogs: `evaluate_script` is blocked while a dialog is open and a handled dialog is cleared;
+  console messages describe Map, Set, functions, DOM nodes, symbols and cyclic arguments, and
+  resolve error causes on the session that reported the exception
+* the CLI no longer forwards tool arguments to `start`, rejects `--slim` in start options, and
+  serializes object daemon arguments
+
+### Brave
+
+* upstream's new agent-plugin manifests and the `skills/` additions are rebranded to `brave-mcp`
+  and `brave-devtools-cli`; the Claude Code plugin launches `npx --prefix` like upstream
+* Brave's executable, profile and `DevToolsActivePort` discovery, the protocol timeout and the
+  `--autoConnect` behaviour are preserved on top of the `ServerConfig` refactor
+* `BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS` still raises the tool-call timeout above upstream's 60
+  seconds, and `BRAVE_DEVTOOLS_MCP_NO_USAGE_STATISTICS` /
+  `BRAVE_DEVTOOLS_MCP_CATEGORY_EXPERIMENTAL_THIRD_PARTY` replace the upstream variable names
+* the README documents the CLI and the skills, and the CI workflows run `gclient-sync` before
+  installing Brave
+
+
 ## [1.11.0](https://github.com/triuzzi/brave-devtools-mcp/compare/v1.10.1...v1.11.0) (2026-10-15)
 
 ### Upstream sync

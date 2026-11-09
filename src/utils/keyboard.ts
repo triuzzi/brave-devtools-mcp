@@ -265,13 +265,22 @@ const validKeys = new Set([
   'VolumeUp',
 ]);
 
-function throwIfInvalidKey(key: string): KeyInput {
-  if (validKeys.has(key)) {
-    return key as KeyInput;
+/**
+ * Whether the string is a single valid key name (no `+` combinations).
+ */
+export function isValidKey(key: string): key is KeyInput {
+  return validKeys.has(key);
+}
+
+function invalidKeyMessage(key: string): string {
+  return `${key} is invalid. Valid keys are: ${Array.from(validKeys.values()).join(',')}.`;
+}
+
+export function throwIfInvalidKey(key: string): KeyInput {
+  if (isValidKey(key)) {
+    return key;
   }
-  throw new Error(
-    `${key} is invalid. Valid keys are: ${Array.from(validKeys.values()).join(',')}.`,
-  );
+  throw new Error(invalidKeyMessage(key));
 }
 
 /**
@@ -293,7 +302,8 @@ export function parseKey(keyInput: string): [KeyInput, ...KeyInput[]] {
     result.push(throwIfInvalidKey(key));
   }
 
-  if (result.length === 0) {
+  const primaryKey = result.at(-1);
+  if (primaryKey === undefined) {
     throw new Error(`Key ${keyInput} could not be parsed.`);
   }
 
@@ -301,5 +311,5 @@ export function parseKey(keyInput: string): [KeyInput, ...KeyInput[]] {
     throw new Error(`Key ${keyInput} contains duplicate keys.`);
   }
 
-  return [result.at(-1), ...result.slice(0, -1)] as [KeyInput, ...KeyInput[]];
+  return [primaryKey, ...result.slice(0, -1)];
 }

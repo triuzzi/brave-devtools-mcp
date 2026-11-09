@@ -4,9 +4,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {YargsOptions} from '../third_party/index.js';
+import type {McpOptionsFor} from './category-options.js';
 
-export const browserOptions = {
+export interface BrowserArguments {
+  autoConnect: boolean;
+  browserUrl?: string;
+  wsEndpoint?: string;
+  wsHeaders?: Record<string, string>;
+  headless: boolean;
+  executablePath?: string;
+  isolated: boolean;
+  userDataDir?: string;
+  channel?: 'release' | 'beta' | 'nightly';
+  proxyServer?: string;
+  braveArg?: string[];
+  ignoreDefaultBraveArg?: string[];
+}
+
+export type BrowserOptions = McpOptionsFor<BrowserArguments>;
+
+export const browserOptions: BrowserOptions = {
   autoConnect: {
     type: 'boolean',
     description:
@@ -18,7 +35,7 @@ export const browserOptions = {
     description:
       'Connect to a running, debuggable Brave instance (e.g. `http://127.0.0.1:9222`). For more details see: https://github.com/triuzzi/brave-devtools-mcp/blob/main/docs/advanced-usage.md#connecting-to-a-running-brave-instance.',
     alias: 'u',
-    coerce: (url: string | undefined) => {
+    coerce: (url: string | undefined): string | undefined => {
       if (!url) {
         return;
       }
@@ -35,7 +52,7 @@ export const browserOptions = {
     description:
       'WebSocket endpoint to connect to a running Brave instance (e.g., ws://127.0.0.1:9222/devtools/browser/<id>). Alternative to --browserUrl.',
     alias: 'w',
-    coerce: (url: string | undefined) => {
+    coerce: (url: string | undefined): string | undefined => {
       if (!url) {
         return;
       }
@@ -59,19 +76,30 @@ export const browserOptions = {
     type: 'string',
     description:
       'Custom headers for WebSocket connection in JSON format (e.g., \'{"Authorization":"Bearer token"}\'). Only works with --wsEndpoint.',
-    coerce: (val: string | undefined) => {
+    coerce: (val: unknown): Record<string, string> | undefined => {
       if (!val) {
         return;
       }
       try {
-        const parsed = JSON.parse(val);
-        if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+        const parsed: unknown = typeof val === 'string' ? JSON.parse(val) : val;
+        if (
+          typeof parsed !== 'object' ||
+          parsed === null ||
+          Array.isArray(parsed)
+        ) {
           throw new Error('Headers must be a JSON object');
         }
-        return parsed as Record<string, string>;
+        const headers: Record<string, string> = {};
+        for (const [key, value] of Object.entries(parsed)) {
+          if (typeof value !== 'string') {
+            throw new Error(`Header "${key}" must have a string value`);
+          }
+          headers[key] = value;
+        }
+        return headers;
       } catch (error) {
         throw new Error(
-          `Invalid JSON for wsHeaders: ${(error as Error).message}`,
+          `Invalid JSON for wsHeaders: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },
@@ -121,8 +149,8 @@ export const browserOptions = {
     describe:
       'Explicitly disable default arguments for Brave. Only applies when Brave is launched by brave-devtools-mcp.',
   },
-} satisfies Record<string, YargsOptions>;
+};
 
-export function getBrowserOptions(): typeof browserOptions {
+export function getBrowserOptions(): BrowserOptions {
   return browserOptions;
 }
