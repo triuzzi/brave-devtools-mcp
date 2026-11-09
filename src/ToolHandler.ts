@@ -61,7 +61,7 @@ import {PROTOCOL_TIMEOUT_MILLISECONDS} from './BrowserManager.js';
  * PROTOCOL_TIMEOUT_MILLISECONDS). Timing out abandons the attempt, closing a
  * launched Brave or dropping an attached one, so the retry starts over.
  */
-export const TOOL_CALL_TIMEOUT_MS = Math.max(
+export const TOOL_CALL_TIMEOUT_MS: number = Math.max(
   60_000,
   PROTOCOL_TIMEOUT_MILLISECONDS,
 );

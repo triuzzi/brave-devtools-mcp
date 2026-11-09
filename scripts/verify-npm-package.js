@@ -65,7 +65,9 @@ function verifyPackageContents() {
         process.exit(1);
       }
     }
-    console.log(`npm pack --dry-run contained ${JSON.stringify(requiredPaths)}`);
+    console.log(
+      `npm pack --dry-run contained ${JSON.stringify(requiredPaths)}`,
+    );
   } catch (err) {
     console.error('failed to parse npm pack output', err);
     process.exit(1);

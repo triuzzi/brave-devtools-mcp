@@ -103,8 +103,8 @@ jobs:
 
       - name: Smoke test bundled binaries
         run: |
-          node ./build/src/bin/brave-devtools-mcp.js --version
-          node ./build/src/bin/brave-devtools.js --version
+          node ./out/Default/gen/src/bin/brave-devtools-mcp.js --version
+          node ./out/Default/gen/src/bin/brave-devtools.js --version
 
   create-draft-release:
     name: Create draft GitHub release

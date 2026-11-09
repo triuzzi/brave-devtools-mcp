@@ -52,9 +52,10 @@ export function parseProtocolTimeoutMilliseconds(
 // marked dead and every subsequent call throws — only daemon restart
 // recovers. Bumping the ceiling to 10min covers realistic loads;
 // override via env for power users.
-export const PROTOCOL_TIMEOUT_MILLISECONDS = parseProtocolTimeoutMilliseconds(
-  process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS,
-);
+export const PROTOCOL_TIMEOUT_MILLISECONDS: number =
+  parseProtocolTimeoutMilliseconds(
+    process.env.BRAVE_DEVTOOLS_PROTOCOL_TIMEOUT_MS,
+  );
 
 export function resolveBraveExecutablePath(
   channel: Channel = 'release',
@@ -185,7 +186,6 @@ export function resolveBraveUserDataDirectory(
 
   throw new Error(`Unsupported platform: ${platform}`);
 }
-
 
 export interface BrowserManagerOptions {
   logFile?: fs.WriteStream;
@@ -393,7 +393,8 @@ export class BrowserManager {
         : 'brave-profile';
 
     const executablePath =
-      this.#config.resolved.executablePath ?? resolveBraveExecutablePath(channel);
+      this.#config.resolved.executablePath ??
+      resolveBraveExecutablePath(channel);
 
     let userDataDir = this.#config.resolved.userDataDir;
     if (!isolated && !userDataDir) {

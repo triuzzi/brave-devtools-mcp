@@ -34,10 +34,7 @@ describe('e2e', {concurrency: true}, () => {
       const transport = new StdioClientTransport({
         command: process.execPath,
         args: [
-          path.resolve(
-            import.meta.dirname,
-            '../src/bin/brave-devtools-mcp.js',
-          ),
+          path.resolve(import.meta.dirname, '../src/bin/brave-devtools-mcp.js'),
           '--headless',
           '--isolated',
           '--executable-path',

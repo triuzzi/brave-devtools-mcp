@@ -180,15 +180,15 @@ See the [CLI guide][cli] for all commands and options.
 
 The package includes [skills](./skills) that teach your agent how to use Brave DevTools:
 
-| Skill                                                     | Use it to                                       |
-| --------------------------------------------------------- | ----------------------------------------------- |
-| [`brave-devtools`](./skills/brave-devtools)               | Debug and automate pages with the MCP tools.    |
-| [`brave-devtools-cli`](./skills/brave-devtools-cli)       | Run the CLI and write shell scripts with it.    |
-| [`a11y-debugging`](./skills/a11y-debugging)               | Audit and fix accessibility issues.             |
-| [`cookie-debugging`](./skills/cookie-debugging)           | Debug cookies, sessions, and authentication.    |
-| [`debug-optimize-lcp`](./skills/debug-optimize-lcp)       | Debug and improve Largest Contentful Paint.     |
-| [`memory-leak-debugging`](./skills/memory-leak-debugging) | Find and fix memory leaks.                      |
-| [`troubleshooting`](./skills/troubleshooting)             | Fix connection problems between MCP and Brave.  |
+| Skill                                                     | Use it to                                      |
+| --------------------------------------------------------- | ---------------------------------------------- |
+| [`brave-devtools`](./skills/brave-devtools)               | Debug and automate pages with the MCP tools.   |
+| [`brave-devtools-cli`](./skills/brave-devtools-cli)       | Run the CLI and write shell scripts with it.   |
+| [`a11y-debugging`](./skills/a11y-debugging)               | Audit and fix accessibility issues.            |
+| [`cookie-debugging`](./skills/cookie-debugging)           | Debug cookies, sessions, and authentication.   |
+| [`debug-optimize-lcp`](./skills/debug-optimize-lcp)       | Debug and improve Largest Contentful Paint.    |
+| [`memory-leak-debugging`](./skills/memory-leak-debugging) | Find and fix memory leaks.                     |
+| [`troubleshooting`](./skills/troubleshooting)             | Fix connection problems between MCP and Brave. |
 
 ### Install skills as a plugin
 

@@ -50,7 +50,7 @@ describe('ServerConfig', () => {
         () =>
           ServerConfig.validateConflicts({
             browserUrl: 'http://localhost:9222',
-            channel: 'canary',
+            channel: 'nightly',
           }),
         /Arguments channel and browserUrl are mutually exclusive/,
       );
@@ -93,7 +93,7 @@ describe('ServerConfig', () => {
       const args = ServerConfig.applyDefaults({headless: true}, {env: {}});
       assert.strictEqual(args.headless, true);
       assert.strictEqual(args.isolated, false);
-      assert.strictEqual(args.channel, 'stable');
+      assert.strictEqual(args.channel, 'release');
       assert.strictEqual(args.categoryExtensions, undefined);
     });
 
@@ -200,7 +200,7 @@ describe('ServerConfig', () => {
       using configFile = createTempFile(
         JSON.stringify({
           browserUrl: 'http://localhost:9222',
-          channel: 'canary',
+          channel: 'nightly',
         }),
         'cd4a.conflict.config.json',
       );
@@ -345,8 +345,8 @@ describe('ServerConfig', () => {
     });
 
     it('applies env overrides when merging reloadable options', () => {
-      const initial = parseConfig();
-      const next = parseConfig();
+      const initial = parseConfig(['--usageStatistics=true']);
+      const next = parseConfig(['--usageStatistics=true']);
 
       const mergedWithCi = initial.mergeReloadable(next, {
         env: {CI: 'true'},
@@ -453,7 +453,7 @@ describe('ServerConfig', () => {
       assert.strictEqual(next.resolved.categoryExtensions, undefined);
       assert.strictEqual(previous.resolved.isolated, true);
       assert.strictEqual(next.resolved.isolated, false);
-      assert.strictEqual(previous.resolved.channel, 'stable');
+      assert.strictEqual(previous.resolved.channel, 'release');
       assert.strictEqual(next.resolved.channel, undefined);
       assert.deepStrictEqual(previous.getRestartRequiredChanges(next), [
         'browserUrl',
