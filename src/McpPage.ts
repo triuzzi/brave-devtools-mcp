@@ -183,6 +183,7 @@ export class McpPage implements ContextPage {
   #locatorClass: typeof Locator;
   #navigationTimeout: number;
   #sourceMaps: boolean;
+  #emulateFocusedPages: boolean;
   #commentBridge?: DevToolsCommentBridge;
   #onNotification?: (message: string) => void;
 
@@ -195,6 +196,7 @@ export class McpPage implements ContextPage {
       isolatedContextName?: string;
       navigationTimeout?: number;
       sourceMaps?: boolean;
+      emulateFocusedPages?: boolean;
       onNotification?: (message: string) => void;
     },
   ) {
@@ -202,6 +204,7 @@ export class McpPage implements ContextPage {
     this.#locatorClass = options.locatorClass;
     this.#navigationTimeout = options.navigationTimeout ?? NAVIGATION_TIMEOUT;
     this.#sourceMaps = options.sourceMaps ?? true;
+    this.#emulateFocusedPages = options.emulateFocusedPages ?? true;
     this.#onNotification = options.onNotification;
     this.target = target;
     this.id = id;
@@ -316,6 +319,17 @@ export class McpPage implements ContextPage {
         return;
       }
       this.#pptrPage = page;
+      // Estate hard rule: sharing a visible Brave window must never raise it.
+      // Puppeteer / CDP Page.bringToFront is what steals desktop focus from the
+      // founder. When --no-emulate-focused-pages is set, neuter bringToFront on
+      // every page so click/fill/select cannot sneak a raise through.
+      if (!this.#emulateFocusedPages) {
+        page.bringToFront = async () => {
+          logger?.(
+            'suppressed Page.bringToFront (--no-emulate-focused-pages)',
+          );
+        };
+      }
       page.on('dialog', this.#dialogHandler);
       this.#networkCollector = new NetworkCollector(page);
       this.#consoleCollector = new ConsoleCollector(page, collect => {
@@ -342,8 +356,17 @@ export class McpPage implements ContextPage {
     }
   }
 
+  /** True only when focus emulation (and window raises) are allowed. */
+  get emulateFocusedPagesEnabled(): boolean {
+    return this.#emulateFocusedPages;
+  }
+
   async #initFocusEmulationNoThrow(): Promise<void> {
-    // We emulate a focused page for all pages to support multi-agent workflows.
+    if (!this.#emulateFocusedPages) {
+      return;
+    }
+    // Emulate a focused page so multi-agent workflows see focused document APIs.
+    // Disabled via --no-emulate-focused-pages when sharing a visible desktop window.
     void this.pptrPage.emulateFocusedPage(true).catch(error => {
       logger?.('Error turning on focused page emulation', error);
     });

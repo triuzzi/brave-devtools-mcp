@@ -61,6 +61,10 @@ interface McpContextOptions {
   performanceCrux: boolean;
   // Whether source maps are enabled in DevTools.
   sourceMaps?: boolean;
+  // Whether to emulate OS focus on discovered pages (can steal desktop focus).
+  emulateFocusedPages?: boolean;
+  // When true, new_page defaults to background tabs.
+  backgroundPages?: boolean;
   // The allow list of URL patterns to allow loading resources.
   allowlist?: string[];
   // The block list of URL patterns to block loading resources.
@@ -329,6 +333,20 @@ export class McpContext implements Context {
     background?: boolean,
     isolatedContextName?: string,
   ): Promise<McpPage> {
+    const openInBackground =
+      background ?? (this.#options.backgroundPages ? true : undefined);
+    // Isolated browser contexts open a separate cookie jar and often raise a
+    // new window — forbidden when sharing the founder Brave desktop session.
+    if (
+      isolatedContextName !== undefined &&
+      this.#options.emulateFocusedPages === false
+    ) {
+      throw new Error(
+        'isolatedContext is refused while --no-emulate-focused-pages is set. ' +
+          'Use a normal background tab on the existing Brave instance ' +
+          '(new_page with background=true, no isolatedContext).',
+      );
+    }
     let page: Page;
     if (isolatedContextName !== undefined) {
       let ctx = this.#isolatedContexts.get(isolatedContextName);
@@ -336,9 +354,9 @@ export class McpContext implements Context {
         ctx = await this.browser.createBrowserContext();
         this.#isolatedContexts.set(isolatedContextName, ctx);
       }
-      page = await ctx.newPage({background});
+      page = await ctx.newPage({background: openInBackground});
     } else {
-      page = await this.browser.newPage({background});
+      page = await this.browser.newPage({background: openInBackground});
     }
     const mcpPage = this.#createMcpPage(page.target());
     await mcpPage.init();
@@ -592,6 +610,7 @@ export class McpContext implements Context {
         ),
         navigationTimeout: this.#options.navigationTimeout,
         sourceMaps: this.#options.sourceMaps,
+        emulateFocusedPages: this.#options.emulateFocusedPages,
         onNotification: this.#options.onNotification,
       });
     }
