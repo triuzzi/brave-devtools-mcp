@@ -67,6 +67,9 @@ jobs:
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
 
+      - name: Sync DevTools dependencies
+        run: npm run gclient-sync
+
       - name: Install Brave Browser
         run: |
           sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
