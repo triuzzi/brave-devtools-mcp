@@ -183,16 +183,24 @@ jobs:
 
       - name: Publish brave-devtools-mcp alias
         run: |
-          VERSION=$(node -p "require('./package.json').version")
           node -e "const fs = require('node:fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.name = 'brave-devtools-mcp'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
           npm publish --provenance --access public
-          npm view "brave-devtools-mcp@${VERSION}" version
 
       - name: Verify both packages
         run: |
           VERSION=$(node -p "require('./package.json').version")
           for package in brave-mcp brave-devtools-mcp; do
-            npm view "${package}@${VERSION}" version
+            for attempt in $(seq 1 30); do
+              if npm view "${package}@${VERSION}" version; then
+                break
+              fi
+              if [ "${attempt}" = "30" ]; then
+                echo "::error::${package}@${VERSION} did not become available on npm."
+                exit 1
+              fi
+              echo "${package}@${VERSION} not available yet, retrying in 6s."
+              sleep 6
+            done
           done
 
   publish-npm-alias:
@@ -243,7 +251,17 @@ jobs:
           fi
           node -e "const fs = require('node:fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.name = 'brave-devtools-mcp'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
           npm publish --provenance --access public
-          npm view "brave-devtools-mcp@${VERSION}" version
+          for attempt in $(seq 1 30); do
+            if npm view "brave-devtools-mcp@${VERSION}" version; then
+              break
+            fi
+            if [ "${attempt}" = "30" ]; then
+              echo "::error::brave-devtools-mcp@${VERSION} did not become available on npm."
+              exit 1
+            fi
+            echo "brave-devtools-mcp@${VERSION} not available yet, retrying in 6s."
+            sleep 6
+          done
 
   publish-to-mcp-registry:
     needs: publish-to-npm
