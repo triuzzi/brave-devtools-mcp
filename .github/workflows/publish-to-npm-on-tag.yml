@@ -176,17 +176,19 @@ jobs:
       - name: Verify both packages
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          # The registry can serve a freshly published version minutes later,
+          # so wait up to 10 minutes per package before failing the release.
           for package in brave-mcp brave-devtools-mcp; do
-            for attempt in $(seq 1 30); do
-              if npm view "${package}@${VERSION}" version; then
+            for attempt in $(seq 1 60); do
+              if npm view "${package}@${VERSION}" version --prefer-online; then
                 break
               fi
-              if [ "${attempt}" = "30" ]; then
+              if [ "${attempt}" = "60" ]; then
                 echo "::error::${package}@${VERSION} did not become available on npm."
                 exit 1
               fi
-              echo "${package}@${VERSION} not available yet, retrying in 6s."
-              sleep 6
+              echo "${package}@${VERSION} not available yet, retrying in 10s."
+              sleep 10
             done
           done
 
@@ -235,16 +237,16 @@ jobs:
           fi
           node -e "const fs = require('node:fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.name = 'brave-devtools-mcp'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
           npm publish --provenance --access public
-          for attempt in $(seq 1 30); do
-            if npm view "brave-devtools-mcp@${VERSION}" version; then
+          for attempt in $(seq 1 60); do
+            if npm view "brave-devtools-mcp@${VERSION}" version --prefer-online; then
               break
             fi
-            if [ "${attempt}" = "30" ]; then
+            if [ "${attempt}" = "60" ]; then
               echo "::error::brave-devtools-mcp@${VERSION} did not become available on npm."
               exit 1
             fi
-            echo "brave-devtools-mcp@${VERSION} not available yet, retrying in 6s."
-            sleep 6
+            echo "brave-devtools-mcp@${VERSION} not available yet, retrying in 10s."
+            sleep 10
           done
 
   publish-to-mcp-registry:
