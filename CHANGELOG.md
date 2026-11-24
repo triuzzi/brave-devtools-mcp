@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.13.0](https://github.com/triuzzi/brave-devtools-mcp/compare/v1.12.0...v1.13.0) (2026-11-24)
+
+### Upstream sync
+
+* sync with Chrome DevTools MCP 1.13.0 plus the commits that landed on upstream `main` after
+  that release
+* page-scoped network mocks: `mock_network` and `remove_network_mock` answer a request from a
+  local file or from an upstream URL, abort it or allow it from another origin, and
+  `--categoryNetworkMocks` turns the category on
+* `set_logpoints` is built on the DevTools `BreakpointManager`, and `get_css_styles` resolves
+  custom property values inline and reports computed styles
+* DevTools UI debugging: `open_devtools`, `reveal_in_devtools`, `get_devtools_comments` and
+  `resolve_devtools_comment` behind `--devtoolsComments`, documented by the new
+  `inspect-in-devtools` skill
+* network and console coverage for service workers, `--backgroundNewPages` keeps new tabs in the
+  background, and `screenshot` takes `omitBackground` for transparent PNG and WebP captures
+* tool results can list the errors a page raised while the tool ran
+* the Puppeteer, `@puppeteer/browsers` and DevTools frontend imports moved into
+  `src/third_party/browser.js`, loaded on first use; `src/third_party/index.ts` is the light
+  bundle the server loads at startup, and ESLint rejects a value import of the browser bundle
+  from tools, config and telemetry
+* telemetry sends the startup event from the server process and starts the watchdog on the first
+  event that needs it
+* the CLI passes option values that start with `-` through to tools, strips terminal escape
+  sequences from tool output, and accepts arrays of strings; `--viewport` and `--browserUrl`
+  reject malformed values at startup
+* fixes: `install_pwa` and `launch_pwa` validate their URL, `list_extensions` keeps its JSON
+  fields, a dialog opened by an input tool returns immediately, multi-file `upload_file` works
+  through chooser-opening elements, daemons survive a failed `SIGKILL` and keep their tool-call
+  timeouts, unknown page IDs are not queued, and a `DevToolsActivePort` permission failure
+  explains how to grant access
+* the build generates `THIRD_PARTY_NOTICES` from the metafile inputs and release builds set
+  `is_debug=false`; the separate bundle and `test:notices` scripts are gone, and
+  `npm run sync` installs dependencies, the DevTools submodule and the gclient deps in one step
+
+### Brave
+
+* upstream's new `inspect-in-devtools` and CLI skills are rebranded, and
+  `skills/brave-devtools-cli` is re-derived from upstream's updated skill
+* the `DevToolsActivePort` permission hint and the missing-display launch error are Brave-branded,
+  and Brave's profile directory is still resolved from the channel and read directly
+* `docs/advanced-usage.md` documents `--executablePath` for a Brave build installed outside the
+  standard location
+* the `BRAVE_DEVTOOLS_MCP_*` environment variables are used everywhere upstream added the
+  `CHROME_DEVTOOLS_MCP_*` names, including the memory-footprint profile script
+
 ## [1.12.0](https://github.com/triuzzi/brave-devtools-mcp/compare/v1.11.0...v1.12.0) (2026-11-09)
 
 ### Upstream sync

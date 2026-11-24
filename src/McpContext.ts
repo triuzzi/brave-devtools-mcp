@@ -22,14 +22,15 @@ import type {
 } from './processors/HeapSnapshotManager.js';
 import {McpPage} from './McpPage.js';
 import type {UncaughtError} from './collectors/PageCollector.js';
-import {ServiceWorkerConsoleCollector} from './collectors/ServiceWorkerCollector.js';
+import {ServiceWorkerCollector} from './collectors/ServiceWorkerCollector.js';
+import {Mutex, type Root} from './third_party/index.js';
 import {
   Locator,
-  Mutex,
   type Browser,
   type BrowserContext,
   type Connection,
   type ConsoleMessage,
+  type HTTPRequest,
   type GetPWAStateOptions,
   type InstallPWAOptions,
   type LaunchPWAOptions,
@@ -39,9 +40,8 @@ import {
   type Target,
   type UninstallPWAOptions,
   type Extension,
-  type Root,
   type DevTools,
-} from './third_party/index.js';
+} from './third_party/browser.js';
 import type {ParsedArguments} from './config/mcp-options.js';
 import type {ReadonlyServerConfig} from './config/ServerConfig.js';
 import {ToolCategory} from './tools/categories.js';
@@ -57,8 +57,16 @@ import {
 import type {TraceResult} from './processors/PerformanceTrace.js';
 import type {Logger} from './types.js';
 import {McpWorker} from './McpWorker.js';
-import {getTempFilePath, resolveCanonicalPath} from './utils/files.js';
-import {escapeForLog} from './utils/logger.js';
+import {
+  fileUrlToPathWithPosixFallback,
+  getTempFilePath,
+  resolveCanonicalPath,
+} from './utils/files.js';
+import {escapeForLog, redactUrlForLogging} from './utils/logger.js';
+import {
+  fetchWithValidatedRedirects,
+  validateUrlNotBlocked,
+} from './utils/network.js';
 import type {TaskQueue, TaskRunner} from './utils/TaskRunner.js';
 import {isAllowedUrl} from './utils/url.js';
 
@@ -174,7 +182,7 @@ export class McpContext implements Context, BrowserlessContext {
   #selectedPageFallback?: {wasClosed: boolean};
   #selectedPageFallbackRead = false;
 
-  #serviceWorkerConsoleCollector?: ServiceWorkerConsoleCollector;
+  #serviceWorkerCollector?: ServiceWorkerCollector;
 
   #reconnectNotice = false;
 
@@ -373,8 +381,8 @@ export class McpContext implements Context, BrowserlessContext {
   }
 
   async #initBrowserState(browser: Browser): Promise<void> {
-    const collector = new ServiceWorkerConsoleCollector(browser);
-    this.#serviceWorkerConsoleCollector = collector;
+    const collector = new ServiceWorkerCollector(browser);
+    this.#serviceWorkerCollector = collector;
     // All listeners are registered synchronously, before the first await. If
     // this call hangs and is abandoned by the tool-call timeout, a later call
     // that installs a different browser removes them in #resetBrowserState().
@@ -399,7 +407,7 @@ export class McpContext implements Context, BrowserlessContext {
     this.#browser?.off('targetcreated', this.#onTargetCreated);
     this.#browser?.off('targetdestroyed', this.#onTargetDestroyed);
 
-    this.#serviceWorkerConsoleCollector?.dispose();
+    this.#serviceWorkerCollector?.dispose();
     for (const mcpPage of this.#allMcpPages()) {
       this.#disposeMcpPage(mcpPage);
     }
@@ -414,7 +422,7 @@ export class McpContext implements Context, BrowserlessContext {
     this.#selectedPageFallback = undefined;
     this.#selectedPageFallbackRead = false;
     this.#traceResults = [];
-    this.#serviceWorkerConsoleCollector = undefined;
+    this.#serviceWorkerCollector = undefined;
     this.#browser = undefined;
     this.#browserReady = undefined;
   }
@@ -526,7 +534,9 @@ export class McpContext implements Context, BrowserlessContext {
     const resolvedRoots = await Promise.allSettled(
       roots.map(async root => {
         const rootPathUri = root.uri;
-        const rootPath = path.resolve(fileURLToPath(rootPathUri));
+        const rootPath = path.resolve(
+          fileUrlToPathWithPosixFallback(rootPathUri),
+        );
         return await fs.realpath(rootPath);
       }),
     );
@@ -741,8 +751,12 @@ export class McpContext implements Context, BrowserlessContext {
     return notice;
   }
 
+  #findPageById(pageId: number): McpPage | undefined {
+    return this.#mcpPages.values().find(mcpPage => mcpPage.id === pageId);
+  }
+
   getPageById(pageId: number): McpPage {
-    const page = this.#mcpPages.values().find(mcpPage => mcpPage.id === pageId);
+    const page = this.#findPageById(pageId);
     if (!page) {
       throw new Error('No page found');
     }
@@ -750,13 +764,16 @@ export class McpContext implements Context, BrowserlessContext {
   }
 
   /**
-   * The queue for tasks on page `pageId`. The queue exists before the page
-   * does, so a tool call can enter it before the browser connects. It is a
-   * child of {@link taskQueue}.
+   * The queue for tasks on page `pageId`, a child of {@link taskQueue}.
+   * Returns {@link taskQueue} when no page has this id, for example before
+   * the browser connects. No queue is stored for such an id.
    */
   pageTaskQueue(pageId: number): TaskQueue {
     let queue = this.#pageTaskQueues.get(pageId);
     if (!queue) {
+      if (!this.#findPageById(pageId)) {
+        return this.taskQueue;
+      }
       queue = this.#taskRunner.createQueue(this.taskQueue);
       this.#pageTaskQueues.set(pageId, queue);
     }
@@ -837,15 +854,48 @@ export class McpContext implements Context, BrowserlessContext {
     return Array.from(this.#workers.values());
   }
 
+  #getServiceWorkerExtensionId(serviceWorkerId: string): string {
+    const worker = this.getWorkerById(serviceWorkerId);
+    if (worker?.type !== 'service_worker') {
+      throw new Error(
+        `Service worker ${serviceWorkerId} not found. Call list_pages to get the current sw-N IDs.`,
+      );
+    }
+    return new URL(worker.url).hostname;
+  }
+
   getServiceWorkerConsoleData(
     serviceWorkerId: string,
   ): Array<ConsoleMessage | UncaughtError> {
-    const worker = this.getWorkerById(serviceWorkerId);
-    if (worker?.type !== 'service_worker') {
-      throw new Error('Service worker not found.');
+    const extensionId = this.#getServiceWorkerExtensionId(serviceWorkerId);
+    return this.#serviceWorkerCollector?.console.getData(extensionId) ?? [];
+  }
+
+  getServiceWorkerConsoleMessageById(
+    serviceWorkerId: string,
+    msgid: number,
+  ): ConsoleMessage | UncaughtError {
+    const extensionId = this.#getServiceWorkerExtensionId(serviceWorkerId);
+    if (!this.#serviceWorkerCollector) {
+      throw new Error('Service worker console data is not available.');
     }
-    const extensionId = new URL(worker.url).hostname;
-    return this.#serviceWorkerConsoleCollector?.getData(extensionId) ?? [];
+    return this.#serviceWorkerCollector.console.getById(extensionId, msgid);
+  }
+
+  getServiceWorkerNetworkData(serviceWorkerId: string): HTTPRequest[] {
+    const extensionId = this.#getServiceWorkerExtensionId(serviceWorkerId);
+    return this.#serviceWorkerCollector?.network.getData(extensionId) ?? [];
+  }
+
+  getServiceWorkerNetworkRequestById(
+    serviceWorkerId: string,
+    reqid: number,
+  ): HTTPRequest {
+    const extensionId = this.#getServiceWorkerExtensionId(serviceWorkerId);
+    if (!this.#serviceWorkerCollector) {
+      throw new Error('Service worker network data is not available.');
+    }
+    return this.#serviceWorkerCollector.network.getById(extensionId, reqid);
   }
 
   #getBrowserContextToNameMap(): Map<BrowserContext, string> {
@@ -1215,70 +1265,23 @@ export class McpContext implements Context, BrowserlessContext {
     return await this.#heapSnapshotManager.getDominatorsOf(filePath, nodeId);
   }
 
-  #validateUrlNotBlocked(url: URL): void {
-    const blocklist = this.#config.resolved.blockedUrlPattern;
-    if (!blocklist) {
-      return;
-    }
-    for (const block of blocklist) {
-      const pattern = new URLPattern(block);
-      if (pattern.test(url)) {
-        throw new Error(`Blocked by blocklist: ${url}`);
-      }
-    }
-  }
-
-  #validateUrlAllowed(url: URL): void {
-    const allowlist = this.#config.resolved.allowedUrlPattern;
-    if (!allowlist) {
-      return;
-    }
-    for (const allow of allowlist) {
-      const pattern = new URLPattern(allow);
-      if (pattern.test(url)) {
-        return;
-      }
-    }
-    throw new Error(`Not allowed by allowlist: ${url}`);
-  }
-
   async #loadNetworkResource(url: URL): Promise<string> {
-    const redirectStatuses = new Set([301, 302, 303, 307, 308]);
-    const maxRedirects = 20;
-    let currentUrl = url;
-
-    for (let redirectCount = 0; ; redirectCount++) {
-      this.#validateUrlNotBlocked(currentUrl);
-      this.#validateUrlAllowed(currentUrl);
-
-      const response = await fetch(currentUrl, {redirect: 'manual'});
-      if (!redirectStatuses.has(response.status)) {
-        if (!response.ok) {
-          throw new Error(`Failed to load resource: ${currentUrl}`);
-        }
-        return await response.text();
-      }
-
-      const location = response.headers.get('location');
-      if (!location) {
-        throw new Error(`Failed to load resource: ${currentUrl}`);
-      }
-      if (redirectCount >= maxRedirects) {
-        throw new Error(`Too many redirects loading resource: ${url}`);
-      }
-
-      await response.body?.cancel();
-      currentUrl = new URL(location, currentUrl);
-      if (currentUrl.protocol !== 'https:' && currentUrl.protocol !== 'http:') {
-        throw new Error(`Unsupported protocol for: ${currentUrl}`);
-      }
+    const response = await fetchWithValidatedRedirects(url, {
+      policy: this.#config.resolved,
+    });
+    if (!response.ok) {
+      throw new Error(
+        'Failed to load resource: ' +
+          redactUrlForLogging(response.url || url.href),
+      );
     }
+    return await response.text();
   }
 
   async loadResource(path: string): Promise<string> {
     const url = new URL(path);
 
-    this.#validateUrlNotBlocked(url);
+    validateUrlNotBlocked(url, this.#config.resolved.blockedUrlPattern);
 
     switch (url.protocol) {
       case 'https:':

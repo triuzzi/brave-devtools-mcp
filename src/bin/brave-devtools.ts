@@ -8,8 +8,6 @@
 
 import process from 'node:process';
 
-import type {Options, PositionalOptions} from 'yargs';
-
 import {
   startDaemon,
   stopDaemon,
@@ -24,6 +22,7 @@ import {
   assertValidSessionId,
 } from '../daemon/utils.js';
 import {logDisclaimers} from '../utils/disclaimers.js';
+import {stripTerminalEscapes} from '../utils/logger.js';
 import {hideBin, yargs} from '../third_party/cli.js';
 import type {CallToolResult} from '../third_party/index.js';
 import {checkForUpdates} from '../utils/check-for-updates.js';
@@ -32,6 +31,7 @@ import {VERSION} from '../version.js';
 import {
   buildCommand,
   getCommandArgSpec,
+  registerCommandArgs,
   shieldLiteralArgs,
 } from '../config/cli-commands.js';
 import {commands} from '../config/cli-options.js';
@@ -223,44 +223,7 @@ for (const [commandName, commandDef] of Object.entries(commands)) {
         choices: ['md', 'json'],
         default: 'md',
       });
-      for (const [argName, opt] of Object.entries(args)) {
-        const type =
-          opt.type === 'integer' || opt.type === 'number'
-            ? 'number'
-            : opt.type === 'boolean'
-              ? 'boolean'
-              : opt.type === 'array'
-                ? 'array'
-                : 'string';
-
-        if (opt.positional) {
-          const options: PositionalOptions = {
-            describe: opt.description,
-            type: type as PositionalOptions['type'],
-          };
-          if (opt.default !== undefined) {
-            options.default = opt.default;
-          }
-          if (opt.enum) {
-            options.choices = opt.enum as Array<string | number>;
-          }
-          y.positional(argName, options);
-        } else {
-          const options: Options = {
-            describe: opt.description,
-            type: type as Options['type'],
-          };
-          if (opt.default !== undefined) {
-            // Document the default in --help without populating argv, so the
-            // daemon applies its current tool schema and config defaults.
-            options.defaultDescription = JSON.stringify(opt.default);
-          }
-          if (opt.enum) {
-            options.choices = opt.enum as Array<string | number>;
-          }
-          y.option(argName, options);
-        }
-      }
+      registerCommandArgs(y, args);
     },
     async argv => {
       const sessionId = argv.sessionId as string;
@@ -292,13 +255,15 @@ for (const [commandName, commandDef] of Object.entries(commands)) {
 
         if (response.success) {
           console.log(
-            await handleResponse(
-              JSON.parse(response.result) as unknown as CallToolResult,
-              argv['output-format'] as 'json' | 'md',
+            stripTerminalEscapes(
+              await handleResponse(
+                JSON.parse(response.result) as unknown as CallToolResult,
+                argv['output-format'] as 'json' | 'md',
+              ),
             ),
           );
         } else {
-          console.error('Error:', response.error);
+          console.error('Error:', stripTerminalEscapes(String(response.error)));
         }
 
         const versionWarning = await versionWarningPromise;

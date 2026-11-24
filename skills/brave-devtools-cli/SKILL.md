@@ -121,6 +121,9 @@ brave-devtools close_heapsnapshot "./snap.heapsnapshot" # Free memory from loade
 
 ## Network
 
+Network mocking commands require `--categoryNetworkMocks=true` at server startup.
+Changing this flag requires a server restart.
+
 ```bash
 brave-devtools get_network_request 1 # Get the currently selected network request for page 1
 brave-devtools get_network_request 1 --reqid 1 --requestFilePath "req.md" # Get request by id and save to file
@@ -129,6 +132,14 @@ brave-devtools list_network_requests 1 # List all network requests for page 1
 brave-devtools list_network_requests 1 --pageSize 50 --pageIdx 0 # List network requests with pagination
 brave-devtools list_network_requests 1 --resourceTypes fetch # Filter requests by resource type
 brave-devtools list_network_requests 1 --includePreservedRequests true # Include preserved requests
+brave-devtools mock_network 1 --route 'https://example.com/app.js*' \
+  --body /tmp/app.js # Replace a response with a local file
+brave-devtools mock_network 1 --route 'https://example.com/app.js*' \
+  --upstream https://example.com/dev.js # Use an upstream URL instead
+brave-devtools mock_network 1 # Inspect all mocks
+brave-devtools mock_network 1 --resourceType script # Inspect script mocks
+brave-devtools remove_network_mock 1 --route 'https://example.com/app.js*'
+brave-devtools remove_network_mock 1 # Clear all mocks for page 1
 ```
 
 ## Debugging & Inspection
@@ -147,6 +158,8 @@ brave-devtools list_console_messages 1 # List all console messages
 brave-devtools list_console_messages 1 --pageSize 20 --pageIdx 1 # List console messages with pagination
 brave-devtools list_console_messages 1 --types error --types info # Filter console messages by type
 brave-devtools list_console_messages 1 --includePreservedMessages true # Include preserved messages
+brave-devtools set_logpoints 1 "src/app.ts:42 'total', cart.total" # Set logpoints on page 1
+brave-devtools set_logpoints 1 # Remove all logpoints on page 1
 brave-devtools take_screenshot 1 # Take a screenshot of the page viewport
 brave-devtools take_screenshot 1 --fullPage true --format "jpeg" --quality 80 # Take a full page screenshot as JPEG with quality
 brave-devtools take_screenshot 1 --uid "id" --filePath "s.png" # Take a screenshot of an element
@@ -159,7 +172,7 @@ brave-devtools screencast_stop 1 # Stops the active screencast on page 1
 ## Extensions
 
 ```bash
-brave-devtools list_extensions # Lists all the Brave extensions installed in the browser
+brave-devtools list_extensions # Lists the unpacked Brave extensions loaded in the browser
 brave-devtools install_extension "/path/to/extension" # Installs a Brave extension from the given path
 brave-devtools uninstall_extension "extension_id" # Uninstalls a Brave extension by its ID
 brave-devtools reload_extension "extension_id" # Reloads an unpacked Brave extension by its ID
@@ -177,14 +190,12 @@ brave-devtools uninstall_pwa "https://example.com/" # Uninstall PWA and close wi
 
 ## Experimental Features
 
-Experimental tools are disabled by default. Enable them with the corresponding flag during `start`.
-
 ```bash
 brave-devtools click_at 1 100 200 # Clicks at the provided coordinates on page 1 (requires --experimentalVision=true)
-brave-devtools list_webmcp_tools 1 # List all WebMCP tools on page 1 (requires --categoryExperimentalWebmcp=true)
-brave-devtools execute_webmcp_tool 1 "tool_name" --input '{"arg":"val"}' # Execute a WebMCP tool on page 1 (requires --categoryExperimentalWebmcp=true)
-brave-devtools list_3p_developer_tools 1 # List third-party developer tools on page 1 (requires --categoryExperimentalThirdParty=true)
-brave-devtools execute_3p_developer_tool 1 "tool_name" --params '{"arg":"val"}' # Execute third-party developer tool on page 1 (requires --categoryExperimentalThirdParty=true)
+brave-devtools list_webmcp_tools 1 # List all WebMCP tools on page 1
+brave-devtools execute_webmcp_tool 1 "tool_name" --input '{"arg":"val"}' # Execute a WebMCP tool on page 1
+brave-devtools list_3p_developer_tools 1 # List third-party developer tools on page 1
+brave-devtools execute_3p_developer_tool 1 "tool_name" --params '{"arg":"val"}' # Execute third-party developer tool on page 1
 ```
 
 ## Service Management

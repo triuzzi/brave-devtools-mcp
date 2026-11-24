@@ -11,12 +11,14 @@ import path from 'node:path';
 
 import type {ParsedArguments} from './config/mcp-options.js';
 import type {ReadonlyServerConfig} from './config/ServerConfig.js';
-import {
-  Mutex,
-  puppeteer,
-  type Browser,
-  type LaunchOptions,
-} from './third_party/index.js';
+import type {
+  Browser,
+  ConnectOptions,
+  LaunchOptions,
+  PuppeteerNode,
+} from './third_party/browser.js';
+import {loadBrowser, Mutex} from './third_party/index.js';
+import {devToolsActivePortPermissionError} from './utils/errorHandling.js';
 import {
   logger,
   puppeteerLogger,
@@ -198,6 +200,16 @@ export interface BrowserManagerOptions {
  */
 class BrowserAttempt {}
 
+/**
+ * Loads Puppeteer and stops it from following symlinks when it reads or
+ * writes files, before each launch or connect.
+ */
+async function loadPuppeteer(): Promise<PuppeteerNode> {
+  const {puppeteer} = await loadBrowser();
+  puppeteer.setFollowSymlinks(false);
+  return puppeteer;
+}
+
 export class BrowserManager {
   #browser?: Browser;
   #browserMode?: 'launched' | 'connected';
@@ -278,6 +290,31 @@ export class BrowserManager {
         'container, create an unprivileged user in the image and switch to it with ' +
         "USER. For the setup that Brave's sandbox needs, see " +
         'https://pptr.dev/troubleshooting#setting-up-chrome-linux-sandbox.',
+      {
+        cause: error,
+      },
+    );
+  }
+
+  /**
+   * Puppeteer reports a headed launch without a display as "Missing X server"
+   * and suggests its own `headless` option, which users of this server cannot
+   * set directly. Point them to the `--headless` flag instead.
+   *
+   * Returns `undefined` for headless launches and for unrelated failures.
+   */
+  static missingDisplayLaunchError(
+    error: Error,
+    headless: boolean,
+  ): Error | undefined {
+    if (headless || !error.message.includes('Missing X server')) {
+      return undefined;
+    }
+    return new Error(
+      `Brave failed to start: ${error.message}\n\n` +
+        'No X server is available to show a headed Brave window. Start ' +
+        'brave-mcp with --headless, set DISPLAY to a running X ' +
+        'server, or run brave-mcp under xvfb-run.',
       {
         cause: error,
       },
@@ -431,6 +468,7 @@ export class BrowserManager {
       BrowserManager.detectDisplay();
     }
 
+    const puppeteer = await loadPuppeteer();
     let browser: Browser | undefined;
     try {
       browser = await puppeteer.launch({
@@ -495,6 +533,13 @@ export class BrowserManager {
         if (rootError) {
           throw rootError;
         }
+        const displayError = BrowserManager.missingDisplayLaunchError(
+          error,
+          headless,
+        );
+        if (displayError) {
+          throw displayError;
+        }
       }
       throw error;
     }
@@ -514,7 +559,7 @@ export class BrowserManager {
     // Important: only pass channel, if autoConnect is true.
     const channel = isAutoConnect ? this.#config.resolved.channel : undefined;
 
-    const connectOptions: Parameters<typeof puppeteer.connect>[0] = {
+    const connectOptions: ConnectOptions = {
       targetFilter: BrowserManager.makeTargetFilter(enableExtensions),
       defaultViewport: null,
       handleDevToolsAsPage: true,
@@ -566,6 +611,13 @@ export class BrowserManager {
         const browserWSEndpoint = `ws://127.0.0.1:${port}${rawPath}`;
         connectOptions.browserWSEndpoint = browserWSEndpoint;
       } catch (error) {
+        const permissionError = devToolsActivePortPermissionError(
+          error,
+          activeUserDataDirectory,
+        );
+        if (permissionError) {
+          throw permissionError;
+        }
         throw new Error(
           `Could not connect to Brave in ${activeUserDataDirectory}. Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.`,
           {
@@ -583,6 +635,7 @@ export class BrowserManager {
       'Connecting Puppeteer to ',
       JSON.stringify(redactConnectOptionsForLogging(connectOptions)),
     );
+    const puppeteer = await loadPuppeteer();
     try {
       const connected = await puppeteer.connect(connectOptions);
       logger?.('Connected Puppeteer');
@@ -591,6 +644,10 @@ export class BrowserManager {
       connected.once('disconnected', () => this.#evictIfCurrent(connected));
       return connected;
     } catch (err) {
+      const permissionError = devToolsActivePortPermissionError(err);
+      if (permissionError) {
+        throw permissionError;
+      }
       throw new Error(
         `Could not connect to Brave. ${autoConnect ? `Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.` : `Check if Brave is running.`}`,
         {

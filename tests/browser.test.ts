@@ -10,7 +10,6 @@ import os from 'node:os';
 import path from 'node:path';
 import {afterEach, beforeEach, describe, it} from 'node:test';
 
-import {executablePath} from 'puppeteer';
 import sinon from 'sinon';
 
 import {
@@ -20,7 +19,7 @@ import {
   resolveBraveExecutablePath,
   resolveBraveUserDataDirectory,
 } from '../src/BrowserManager.js';
-import {puppeteer, type Browser} from '../src/third_party/index.js';
+import {puppeteer, type Browser} from '../src/third_party/browser.js';
 
 import {
   createMockPuppeteerBrowser,
@@ -28,10 +27,7 @@ import {
   createMockServerConfig,
 } from './mocks.js';
 import {serverHooks} from './server.js';
-import {createTempDir} from './utils.js';
-
-const TEST_BROWSER_EXECUTABLE_PATH =
-  process.env.PUPPETEER_EXECUTABLE_PATH ?? (await executablePath());
+import {createTempDir, getExecutablePath} from './utils.js';
 
 async function safeClose(browser: Browser) {
   try {
@@ -229,6 +225,36 @@ describe('browser', () => {
         handleSIGTERM: false,
         handleSIGHUP: false,
       });
+    });
+
+    it('disables following symlinks in Puppeteer before launching', async () => {
+      const setFollowSymlinksStub = sinon.stub(puppeteer, 'setFollowSymlinks');
+      const launchStub = sinon
+        .stub(puppeteer, 'launch')
+        .resolves(createMockPuppeteerBrowser());
+      const manager = new BrowserManager(
+        createMockServerConfig({isolated: true}),
+      );
+
+      await manager.ensureBrowser();
+
+      sinon.assert.calledOnceWithExactly(setFollowSymlinksStub, false);
+      sinon.assert.callOrder(setFollowSymlinksStub, launchStub);
+    });
+
+    it('disables following symlinks in Puppeteer before connecting', async () => {
+      const setFollowSymlinksStub = sinon.stub(puppeteer, 'setFollowSymlinks');
+      const connectStub = sinon
+        .stub(puppeteer, 'connect')
+        .resolves(createMockPuppeteerBrowser());
+      const manager = new BrowserManager(
+        createMockServerConfig({browserUrl: 'http://127.0.0.1:9222'}),
+      );
+
+      await manager.ensureBrowser();
+
+      sinon.assert.calledOnceWithExactly(setFollowSymlinksStub, false);
+      sinon.assert.callOrder(setFollowSymlinksStub, connectStub);
     });
 
     it('connects to a browser when browserUrl is set and disconnects on close()', async () => {
@@ -767,6 +793,171 @@ describe('browser', () => {
         return true;
       });
     });
+
+    it('explains macOS Files & Folders permission when autoConnect is denied reading DevToolsActivePort without userDataDir', async () => {
+      sinon.stub(os, 'platform').returns('darwin');
+      // Brave's DevToolsActivePort file is read directly, so the connect
+      // error is what carries the permission cause here.
+      sinon
+        .stub(fs.promises, 'readFile')
+        .resolves('9222\n/devtools/browser/test');
+      const epermError = Object.assign(
+        new Error(
+          "EPERM: operation not permitted, open '/Users/test/Library/Application Support/Google/Chrome/DevToolsActivePort'",
+        ),
+        {code: 'EPERM'},
+      );
+      const puppeteerError = new Error(
+        'Could not read DevToolsActivePort for chrome at /Users/test/Library/Application Support/Google/Chrome/DevToolsActivePort: permission denied',
+        {cause: epermError},
+      );
+      sinon.stub(puppeteer, 'connect').rejects(puppeteerError);
+
+      const manager = new BrowserManager(
+        createMockServerConfig({
+          autoConnect: true,
+          channel: 'release',
+        }),
+      );
+
+      await assert.rejects(manager.ensureBrowser(), err => {
+        assert.ok(err instanceof Error);
+        assert.strictEqual(
+          err.message,
+          'Could not connect to Brave: macOS blocked reading DevToolsActivePort. Grant the host application (such as your terminal or IDE) access to Brave in System Settings > Privacy & Security > Files & Folders, then try again.',
+        );
+        assert.strictEqual(err.cause, puppeteerError);
+        return true;
+      });
+    });
+
+    it('explains file permissions when autoConnect is denied reading DevToolsActivePort on non-macOS', async () => {
+      sinon.stub(os, 'platform').returns('linux');
+      sinon
+        .stub(fs.promises, 'readFile')
+        .resolves('9222\n/devtools/browser/test');
+      const eaccesError = Object.assign(
+        new Error(
+          "EACCES: permission denied, open '/home/test/.config/google-chrome/DevToolsActivePort'",
+        ),
+        {code: 'EACCES'},
+      );
+      const puppeteerError = new Error(
+        'Could not read DevToolsActivePort for chrome at /home/test/.config/google-chrome/DevToolsActivePort: permission denied',
+        {cause: eaccesError},
+      );
+      sinon.stub(puppeteer, 'connect').rejects(puppeteerError);
+
+      const manager = new BrowserManager(
+        createMockServerConfig({
+          autoConnect: true,
+          channel: 'release',
+        }),
+      );
+
+      await assert.rejects(manager.ensureBrowser(), err => {
+        assert.ok(err instanceof Error);
+        assert.strictEqual(
+          err.message,
+          'Could not connect to Brave: reading DevToolsActivePort was denied by file permissions. Check that the current user can read the Brave profile directory, then try again.',
+        );
+        assert.strictEqual(err.cause, puppeteerError);
+        return true;
+      });
+    });
+
+    it('explains macOS Files & Folders permission when reading DevToolsActivePort in userDataDir fails with EPERM', async () => {
+      sinon.stub(os, 'platform').returns('darwin');
+      const userDataDir = '/Users/test/custom-chrome-profile';
+      const epermError = Object.assign(
+        new Error(
+          `EPERM: operation not permitted, open '${userDataDir}/DevToolsActivePort'`,
+        ),
+        {code: 'EPERM'},
+      );
+      sinon.stub(fs.promises, 'readFile').rejects(epermError);
+      const connectStub = sinon.stub(puppeteer, 'connect');
+
+      const manager = new BrowserManager(
+        createMockServerConfig({
+          autoConnect: true,
+          userDataDir,
+        }),
+      );
+
+      await assert.rejects(manager.ensureBrowser(), err => {
+        assert.ok(err instanceof Error);
+        assert.strictEqual(
+          err.message,
+          `Could not connect to Brave in ${userDataDir}: macOS blocked reading DevToolsActivePort. Grant the host application (such as your terminal or IDE) access to Brave in System Settings > Privacy & Security > Files & Folders, then try again.`,
+        );
+        assert.strictEqual(err.cause, epermError);
+        return true;
+      });
+      sinon.assert.notCalled(connectStub);
+    });
+
+    it('explains file permissions on darwin with EACCES when reading DevToolsActivePort in userDataDir fails', async () => {
+      sinon.stub(os, 'platform').returns('darwin');
+      const userDataDir = '/Users/test/custom-chrome-profile';
+      const eaccesError = Object.assign(
+        new Error(
+          `EACCES: permission denied, open '${userDataDir}/DevToolsActivePort'`,
+        ),
+        {code: 'EACCES'},
+      );
+      sinon.stub(fs.promises, 'readFile').rejects(eaccesError);
+      const connectStub = sinon.stub(puppeteer, 'connect');
+
+      const manager = new BrowserManager(
+        createMockServerConfig({
+          autoConnect: true,
+          userDataDir,
+        }),
+      );
+
+      await assert.rejects(manager.ensureBrowser(), err => {
+        assert.ok(err instanceof Error);
+        assert.strictEqual(
+          err.message,
+          `Could not connect to Brave in ${userDataDir}: reading DevToolsActivePort was denied by file permissions. Check that the current user can read the Brave profile directory, then try again.`,
+        );
+        assert.strictEqual(err.cause, eaccesError);
+        return true;
+      });
+      sinon.assert.notCalled(connectStub);
+    });
+
+    it('explains file permissions when reading DevToolsActivePort in userDataDir fails with EACCES on non-macOS', async () => {
+      sinon.stub(os, 'platform').returns('linux');
+      const userDataDir = '/home/test/custom-chrome-profile';
+      const eaccesError = Object.assign(
+        new Error(
+          `EACCES: permission denied, open '${userDataDir}/DevToolsActivePort'`,
+        ),
+        {code: 'EACCES'},
+      );
+      sinon.stub(fs.promises, 'readFile').rejects(eaccesError);
+      const connectStub = sinon.stub(puppeteer, 'connect');
+
+      const manager = new BrowserManager(
+        createMockServerConfig({
+          autoConnect: true,
+          userDataDir,
+        }),
+      );
+
+      await assert.rejects(manager.ensureBrowser(), err => {
+        assert.ok(err instanceof Error);
+        assert.strictEqual(
+          err.message,
+          `Could not connect to Brave in ${userDataDir}: reading DevToolsActivePort was denied by file permissions. Check that the current user can read the Brave profile directory, then try again.`,
+        );
+        assert.strictEqual(err.cause, eaccesError);
+        return true;
+      });
+      sinon.assert.notCalled(connectStub);
+    });
   });
 
   describe('Brave discovery', () => {
@@ -994,6 +1185,43 @@ describe('browser', () => {
     });
   });
 
+  describe('missingDisplayLaunchError', () => {
+    const missingXServer = new Error(
+      'Missing X server to start the headful browser. Either set headless ' +
+        'to true or use xvfb-run to run your Puppeteer script.',
+    );
+
+    it('names --headless when a headed launch has no X server', () => {
+      const error = BrowserManager.missingDisplayLaunchError(
+        missingXServer,
+        false,
+      );
+      assert.ok(error);
+      assert.match(error.message, /--headless/);
+      assert.match(error.message, /Missing X server/);
+      assert.strictEqual(error.cause, missingXServer);
+    });
+
+    it('does not explain failures in headless mode', () => {
+      assert.strictEqual(
+        BrowserManager.missingDisplayLaunchError(missingXServer, true),
+        undefined,
+      );
+    });
+
+    it('does not explain unrelated failures', () => {
+      assert.strictEqual(
+        BrowserManager.missingDisplayLaunchError(
+          new Error(
+            'Protocol error (Target.setDiscoverTargets): Target closed',
+          ),
+          false,
+        ),
+        undefined,
+      );
+    });
+  });
+
   it('cannot launch multiple times with the same profile', async () => {
     await runWithRetry(async () => {
       const tmpDir = os.tmpdir();
@@ -1006,7 +1234,7 @@ describe('browser', () => {
           headless: true,
           isolated: false,
           userDataDir: folderPath,
-          executablePath: TEST_BROWSER_EXECUTABLE_PATH,
+          executablePath: await getExecutablePath(),
         }),
       );
       const browser1 = await manager1.ensureBrowser();
@@ -1017,7 +1245,7 @@ describe('browser', () => {
               headless: true,
               isolated: false,
               userDataDir: folderPath,
-              executablePath: TEST_BROWSER_EXECUTABLE_PATH,
+              executablePath: await getExecutablePath(),
             }),
           );
           const browser2 = await manager2.ensureBrowser();
@@ -1048,7 +1276,7 @@ describe('browser', () => {
           headless: true,
           isolated: false,
           userDataDir: folderPath,
-          executablePath: TEST_BROWSER_EXECUTABLE_PATH,
+          executablePath: await getExecutablePath(),
           viewport: {
             width: 1501,
             height: 801,
@@ -1083,7 +1311,7 @@ describe('browser', () => {
           headless: true,
           isolated: false,
           userDataDir: folderPath,
-          executablePath: TEST_BROWSER_EXECUTABLE_PATH,
+          executablePath: await getExecutablePath(),
           braveArg: ['--remote-debugging-port=0'],
         }),
       );
@@ -1123,7 +1351,7 @@ describe('browser', () => {
           createMockServerConfig({
             headless: true,
             isolated: true,
-            executablePath: TEST_BROWSER_EXECUTABLE_PATH,
+            executablePath: await getExecutablePath(),
             blockedUrlPattern: ['*://*:*/blocked.html'],
           }),
         );
@@ -1168,7 +1396,7 @@ describe('browser', () => {
           createMockServerConfig({
             headless: true,
             isolated: true,
-            executablePath: TEST_BROWSER_EXECUTABLE_PATH,
+            executablePath: await getExecutablePath(),
             allowedUrlPattern: ['*://*:*/allowed.html'],
           }),
         );

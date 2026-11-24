@@ -537,6 +537,32 @@ export default defineConfig([
     },
   },
   {
+    name: 'Modules that must not load the browser bundle',
+    files: [
+      'src/tools/**/*.ts',
+      'src/config/**/*.ts',
+      'src/telemetry/**/*.ts',
+      'src/BrowserManager.ts',
+      'src/processors/HeapSnapshotManager.ts',
+      'src/ToolHandler.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '(^|/)third_party/browser\\.js$',
+              allowTypeImports: true,
+              message:
+                'Do not import values from third_party/browser.js here; use loadBrowser() or a dynamic import() inside the handler.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     name: 'Tools definitions',
     files: ['src/tools/**/*.ts'],
     rules: {
@@ -578,6 +604,7 @@ export default defineConfig([
       'mocha/no-async-suite': 'error',
       'mocha/no-top-level-tests': 'error',
       'mocha/no-nested-tests': 'error',
+      '@local/require-explicit-fake-timers': 'error',
 
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/explicit-function-return-type': 'off',
@@ -642,12 +669,7 @@ export default defineConfig([
   },
   {
     name: 'Config files',
-    files: [
-      'eslint.config.js',
-      'prettier.config.js',
-      'puppeteer.config.js',
-      'rollup.config.js',
-    ],
+    files: ['eslint.config.js', 'prettier.config.js', 'puppeteer.config.js'],
     rules: {
       // The config operate on the default export
       // So allow it for them

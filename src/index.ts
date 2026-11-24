@@ -29,7 +29,6 @@ import {
   type RegisteredTool,
   type Root,
   type Transport,
-  puppeteer,
 } from './third_party/index.js';
 import {ToolHandler} from './ToolHandler.js';
 import type {AnyToolDefinition} from './tools/ToolDefinition.js';
@@ -39,8 +38,6 @@ import {getErrorMessage} from './utils/errorHandling.js';
 import {logger} from './utils/logger.js';
 import {TaskRunner} from './utils/TaskRunner.js';
 import {VERSION} from './version.js';
-
-puppeteer.setFollowSymlinks(false);
 
 /**
  * Timeout for a `roots/list` that a tool call is waiting on, matching the 5s
@@ -397,7 +394,7 @@ export class McpServer {
    * checks run inside `ToolHandler.handle()` inside the task runner.
    */
   #setToolCallRequestHandler(): void {
-    this.server.server.setRequestHandler('tools/call', async request => {
+    this.server.server.setRequestHandler('tools/call', async (request, ctx) => {
       const entry = this.#tools.get(request.params.name);
       if (!entry) {
         throw new ProtocolError(
@@ -407,6 +404,7 @@ export class McpServer {
       }
       const result = await entry.handler.handle(request.params.arguments, {
         viaMcp: true,
+        signal: ctx.mcpReq.signal,
       });
       return this.server.server.projectCallToolResult(result, undefined);
     });

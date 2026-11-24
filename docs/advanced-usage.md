@@ -47,6 +47,29 @@ runs with the same channel. Only one browser can use it at a time. Set the `isol
 option to `true` to use a temporary user data directory instead which will be cleared
 automatically after the browser is closed.
 
+## Custom browser executable
+
+By default, `brave-mcp` launches Brave installed in the standard location for
+the selected channel. To launch a Brave-based browser installed in a custom or
+non-standard location, pass its executable path with `--executablePath` (or
+`-e`):
+
+```json
+{
+  "mcpServers": {
+    "brave-devtools": {
+      "command": "npx",
+      "args": ["brave-mcp@latest", "--executablePath=/path/to/brave"]
+    }
+  }
+}
+```
+
+`--executablePath` only applies when the MCP server launches the browser. It
+cannot be combined with `--channel`, `--autoConnect`, `--browserUrl` or
+`--wsEndpoint`. To use a browser that is already running, see
+[Connecting to a running Brave instance](#connecting-to-a-running-brave-instance).
+
 ## Connecting to a running Brave instance
 
 By default, the Brave DevTools MCP server will start a new Brave instance with a dedicated profile. This might not be ideal in all situations:

@@ -62,8 +62,7 @@ Check that you are using node version specified in .nvmrc, then run following co
 ```sh
 git clone https://github.com/triuzzi/brave-devtools-mcp.git
 cd brave-devtools-mcp
-npm ci
-npm run gclient-sync
+npm run sync
 npm run build
 ```
 

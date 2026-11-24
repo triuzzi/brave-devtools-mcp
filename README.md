@@ -242,11 +242,7 @@ For basic browser tasks only, the `--slim` flag exposes a reduced set of tools. 
 
 ## Advanced usage
 
-For advanced features such as handling concurrent sessions, persistent user data directories, connecting to a running Brave instance instead of starting a new one, or debugging on Android, see our [Advanced Usage Guide][advanced-usage-guide].
-
-## Known limitations
-
-See [Troubleshooting][troubleshooting].
+For advanced features such as handling concurrent sessions, persistent user data directories, using a custom or non-standard browser path (`--executablePath`), connecting to a running Brave instance instead of starting a new one, or debugging on Android, see our [Advanced Usage Guide][advanced-usage-guide].
 
 ## Integrating as a browser subagent
 
