@@ -1,6 +1,6 @@
 {
   "name": "brave-devtools-mcp",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Reliable automation, in-depth debugging, and performance analysis in Brave using DevTools and Puppeteer",
   "mcpServers": {
     "brave-devtools": {
@@ -8,7 +8,7 @@
       "args": [
         "--prefix",
         "${CLAUDE_PLUGIN_DATA}",
-        "brave-mcp@1.12.0"
+        "brave-mcp@1.13.0"
       ]
     }
   }

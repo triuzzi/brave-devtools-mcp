@@ -111,6 +111,16 @@ brave-devtools evaluate_script "() => self.registration.scope" --serviceWorkerId
 brave-devtools lighthouse_audit 1 --mode snapshot
 ```
 
+**Logpoints:**
+
+```sh
+# Set a logpoint on page 1
+brave-devtools set_logpoints 1 "src/app.ts:42 'total', cart.total"
+
+# Remove all logpoints on page 1
+brave-devtools set_logpoints 1
+```
+
 ## Output format
 
 By default, the CLI outputs a human-readable summary of the tool's result. For programmatic use, you can request raw JSON:

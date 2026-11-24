@@ -8,16 +8,16 @@ import type {ParsedArguments} from './config/mcp-options.js';
 import type {ReadonlyServerConfig} from './config/ServerConfig.js';
 import type {McpContext} from './McpContext.js';
 import type {McpPage} from './McpPage.js';
-import {McpResponse, type DataFormat} from './McpResponse.js';
-import {SlimMcpResponse} from './SlimMcpResponse.js';
+import type {McpResponse, DataFormat} from './McpResponse.js';
 import {ClearcutLogger} from './telemetry/ClearcutLogger.js';
 import {
+  DisposableStack,
   ProtocolError,
   ProtocolErrorCode,
   zod,
-  type Browser,
   type CallToolResult,
 } from './third_party/index.js';
+import type {Browser} from './third_party/browser.js';
 import {labels} from './tools/categories.js';
 import {categoryToFlagName} from './config/category-options.js';
 import {
@@ -33,9 +33,11 @@ import {
   type ToolDefinition,
 } from './tools/ToolDefinition.js';
 import {getErrorMessage, toError} from './utils/errorHandling.js';
+import {fileUrlToPathWithPosixFallback} from './utils/files.js';
 import {logger} from './utils/logger.js';
+import {raceWithSignal} from './utils/raceWithSignal.js';
 import type {TaskQueue} from './utils/TaskRunner.js';
-import {fileURLToPath, pathToFileURL} from 'node:url';
+import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {isLocalBrowserEndpoint} from './utils/url.js';
 import {PROTOCOL_TIMEOUT_MILLISECONDS} from './BrowserManager.js';
@@ -67,6 +69,29 @@ export const TOOL_CALL_TIMEOUT_MS: number = Math.max(
 );
 
 class ToolCallTimeoutError extends Error {}
+
+type ResponseFactory = (
+  slim: boolean,
+  config: ReadonlyServerConfig,
+) => McpResponse;
+
+let responseFactory: Promise<ResponseFactory> | undefined;
+
+/**
+ * Loads the response classes on first use, because they import the browser
+ * bundle through the formatters.
+ */
+function loadResponseFactory(): Promise<ResponseFactory> {
+  responseFactory ??= Promise.all([
+    import('./McpResponse.js'),
+    import('./SlimMcpResponse.js'),
+  ]).then(([mcpResponseModule, slimMcpResponseModule]) => (slim, config) => {
+    return slim
+      ? new slimMcpResponseModule.SlimMcpResponse(config)
+      : new mcpResponseModule.McpResponse(config);
+  });
+  return responseFactory;
+}
 
 function buildDisabledMessage(
   toolName: string,
@@ -123,7 +148,9 @@ async function validateAndResolvePathOrUrl(
   }
   if (url) {
     if (url.protocol === 'file:') {
-      return pathToFileURL(await context.validatePath(fileURLToPath(url))).href;
+      return pathToFileURL(
+        await context.validatePath(fileUrlToPathWithPosixFallback(url)),
+      ).href;
     }
     if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)) {
       // Only pass a remote URL through unchanged for parameters whose sink
@@ -324,14 +351,16 @@ export class ToolHandler {
   }
 
   /**
-   * Races a promise against TOOL_CALL_TIMEOUT_MS, calling onTimeout() if the
-   * timer wins. The loser of the race is left running — there is no way to
+   * Races a promise against TOOL_CALL_TIMEOUT_MS and signal abort, calling
+   * onTimeout() only if the timer wins, never on abort.
+   * The loser of the race is left running — there is no way to
    * cancel a pending connect/launch — but since nothing is left awaiting it,
    * it cannot block subsequent tool calls.
    */
   async #raceWithTimeout<T>(
     promise: Promise<T>,
     onTimeout: () => void,
+    signal: AbortSignal,
   ): Promise<T> {
     const timeoutError = new ToolCallTimeoutError(
       `Tool "${this.#tool.name}" timed out after ${TOOL_CALL_TIMEOUT_MS}ms waiting for the browser connection to be established. The connection attempt will be retried automatically on the next tool call.`,
@@ -342,7 +371,7 @@ export class ToolHandler {
       timer.unref?.();
     });
     try {
-      return await Promise.race([promise, timeout]);
+      return await raceWithSignal(Promise.race([promise, timeout]), signal);
     } catch (err) {
       if (err === timeoutError) {
         onTimeout();
@@ -371,13 +400,17 @@ export class ToolHandler {
     params: Record<string, unknown>,
     response: McpResponse,
     context: McpContext,
+    signal: AbortSignal,
   ): ReturnType<McpResponse['handle']> {
     try {
       await validateToolFiles(tool, params, context, true);
+      signal.throwIfAborted();
       await tool.handler({params}, response, context);
     } catch (err) {
+      signal.throwIfAborted();
       response.setError(toError(err));
     }
+    signal.throwIfAborted();
     return await response.handle(
       context,
       this.#dataFormat(this.#config.resolved),
@@ -389,6 +422,7 @@ export class ToolHandler {
     params: Record<string, unknown>,
     response: McpResponse,
     context: McpContext,
+    signal: AbortSignal,
     onTelemetryData: (
       devToolsData: DevToolsData | undefined,
       pageUrl: string | undefined,
@@ -400,8 +434,10 @@ export class ToolHandler {
     // discard that attempt if it succeeds later instead of handing it to a
     // subsequent caller — see BrowserManager#abandonPendingAttempt()'s doc
     // comment for the full mechanism.
-    const browser = await this.#raceWithTimeout(context.ensureBrowser(), () =>
-      this.abandonPendingBrowserAttemptOnTimeout(),
+    const browser = await this.#raceWithTimeout(
+      context.ensureBrowser(),
+      () => this.abandonPendingBrowserAttemptOnTimeout(),
+      signal,
     );
     logger?.(`${tool.name} browser: resolved`);
     if (context.consumeReconnectNotice()) {
@@ -410,6 +446,7 @@ export class ToolHandler {
     let page: McpPage | undefined;
     try {
       await validateToolFiles(tool, params, context, isLocalBrowser(browser));
+      signal.throwIfAborted();
       if (isPageScopedTool(tool)) {
         const pageId = routedPageId(tool, this.#config.resolved, params);
         page =
@@ -417,7 +454,12 @@ export class ToolHandler {
             ? context.getPageById(pageId)
             : context.getSelectedMcpPage();
         await page?.init({emulateFocus: true});
+        signal.throwIfAborted();
         response.setPage(page);
+        // A call that runs beside others can't tell its own errors apart.
+        if (tool.concurrency !== 'none') {
+          response.includeConsoleErrorsFrom(page);
+        }
         if (tool.blockedByDialog) {
           page.throwIfDialogOpen();
         }
@@ -439,12 +481,13 @@ export class ToolHandler {
         );
       }
     } catch (err) {
+      signal.throwIfAborted();
       response.setError(toError(err));
     }
-    onTelemetryData(
-      await context.getDevToolsData(page),
-      context.getSelectedMcpPageUrl(page),
-    );
+    signal.throwIfAborted();
+    const devToolsData = await context.getDevToolsData(page);
+    signal.throwIfAborted();
+    onTelemetryData(devToolsData, context.getSelectedMcpPageUrl(page));
     return await response.handle(
       context,
       this.#dataFormat(this.#config.resolved),
@@ -454,8 +497,8 @@ export class ToolHandler {
   /**
    * The queue the call runs on. `'none'` tools run outside the runner.
    * `'page'` tools run on the queue of the page named by `rawArgs.pageId`
-   * when page id routing applies; every other call runs on the context
-   * queue.
+   * when page id routing applies and the page exists; every other call runs
+   * on the context queue.
    */
   #queueFor(
     context: McpContext,
@@ -476,19 +519,31 @@ export class ToolHandler {
     }
   }
 
-  handle = async (
+  /**
+   * Cancellation stops waiting for a result, but running work keeps its queue
+   * until it settles, including response processing, to preserve serialization.
+   * Operations without cancellation support can keep the queue indefinitely.
+   */
+  async handle(
     rawArgs: Record<string, unknown> = {},
-    options?: {viaMcp?: boolean},
-  ): Promise<CallToolResult> => {
-    const context = await this.getContext();
+    options?: {viaMcp?: boolean; signal?: AbortSignal},
+  ): Promise<CallToolResult> {
+    const signal = options?.signal ?? new AbortController().signal;
+    signal.throwIfAborted();
+    const context = await raceWithSignal(this.getContext(), signal);
+    // Loaded before the call takes its queue, so waiting never holds a queue.
+    const createResponse = await raceWithSignal(loadResponseFactory(), signal);
     let queueGuard: Disposable | undefined;
     try {
-      queueGuard = await this.#queueFor(context, rawArgs)?.scheduleTask();
+      queueGuard = await this.#queueFor(context, rawArgs)?.scheduleTask(signal);
     } catch (err) {
+      signal.throwIfAborted();
       // The queue was disposed while the call waited, e.g. the page closed.
       return errorResult(getErrorMessage(err));
     }
-    using guard = queueGuard;
+    using guard = new DisposableStack();
+    guard.use(queueGuard);
+    signal.throwIfAborted();
     if (options?.viaMcp && this.#disabled) {
       throw new ProtocolError(
         ProtocolErrorCode.InvalidParams,
@@ -513,21 +568,27 @@ export class ToolHandler {
     let pageUrl: string | undefined;
     try {
       logger?.(`${tool.name} request: ${JSON.stringify(params, null, '  ')}`);
-      const response = isSlimTool(tool)
-        ? new SlimMcpResponse(this.#config)
-        : new McpResponse(this.#config);
-      const {content, structuredContent} = isBrowserlessTool(tool)
-        ? await this.#runBrowserlessTool(tool, params, response, context)
-        : await this.#runBrowserTool(
+      const response = createResponse(isSlimTool(tool), this.#config);
+      // The execution owns the queue even when its caller stops waiting.
+      const execution = isBrowserlessTool(tool)
+        ? this.#runBrowserlessTool(tool, params, response, context, signal)
+        : this.#runBrowserTool(
             tool,
             params,
             response,
             context,
+            signal,
             (data, url) => {
               devToolsData = data;
               pageUrl = url;
             },
           );
+      const executionGuard = guard.move();
+      const completion = execution.finally(() => executionGuard.dispose());
+      const {content, structuredContent} = await raceWithSignal(
+        completion,
+        signal,
+      );
       const result: CallToolResult & {
         structuredContent?: Record<string, unknown>;
       } = {
@@ -542,6 +603,10 @@ export class ToolHandler {
       }
       return result;
     } catch (err) {
+      if (signal.aborted) {
+        logger?.(`${tool.name} cancelled:`, signal.reason);
+      }
+      signal.throwIfAborted();
       logger?.(`${tool.name} error:`, err, err?.stack);
       let errorText =
         err && typeof err === 'object' && 'message' in err
@@ -575,5 +640,5 @@ export class ToolHandler {
         pageUrl,
       });
     }
-  };
+  }
 }

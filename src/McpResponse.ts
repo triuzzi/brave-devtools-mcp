@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {WebMCPTool} from 'puppeteer-core';
-
 import type {ReadonlyServerConfig} from './config/ServerConfig.js';
 import {
   CommentFormatter,
@@ -45,28 +43,32 @@ import type {McpPage} from './McpPage.js';
 import {UncaughtError} from './collectors/PageCollector.js';
 import {TextSnapshot} from './TextSnapshot.js';
 import {
-  DevTools,
   getToonEncode,
   getGcfEncode,
-  type ConsoleMessage,
   type ImageContent,
-  type ResourceType,
   type TextContent,
+} from './third_party/index.js';
+import {
+  DevTools,
+  type ConsoleMessage,
+  type ResourceType,
   type Extension,
   type HTTPRequest,
   type Protocol,
-} from './third_party/index.js';
+  type WebMCPTool,
+} from './third_party/browser.js';
 import {handleDialog, listPages} from './tools/pages.js';
 import type {ToolGroups} from './tools/thirdPartyDeveloper.js';
 import type {
   DevToolsData,
+  ElementCssStyles,
   ImageContentData,
   LighthouseData,
-  MatchedStyles,
   Response,
   SnapshotParams,
   WebAuthnAuthenticatorState,
 } from './tools/ToolDefinition.js';
+import {LIST_CONSOLE_MESSAGES_TOOL_NAME} from './tools/toolNames.js';
 import {
   type InsightName,
   type TraceResult,
@@ -81,6 +83,9 @@ import {truncateText} from './utils/text.js';
 import type {WaitForEventsResult} from './utils/WaitForHelper.js';
 
 const {formatBytesToKb} = DevTools.I18n.ByteUtilities;
+
+/** How many errors raised during a call the response lists. */
+const MAX_CONSOLE_ERRORS = 10;
 
 export type DataFormat = 'default' | 'toon' | 'gcf';
 
@@ -102,8 +107,10 @@ export class McpResponse implements Response {
   #attachedNetworkRequestOptions?: {
     requestFilePath?: string;
     responseFilePath?: string;
+    serviceWorkerId?: string;
   };
   #attachedConsoleMessageId?: number;
+  #attachedConsoleMessageServiceWorkerId?: string;
   #attachedTraceSummary?: TraceResult;
   #attachedTraceInsight?: TraceInsightData;
   #attachedLighthouseResult?: LighthouseData;
@@ -134,6 +141,7 @@ export class McpResponse implements Response {
     resourceTypes?: ResourceType[];
     includePreservedRequests?: boolean;
     networkRequestIdInDevToolsUI?: number;
+    serviceWorkerId?: string;
   };
   #consoleDataOptions?: {
     include: boolean;
@@ -144,7 +152,7 @@ export class McpResponse implements Response {
     serviceWorkerId?: string;
   };
   #cssStylesData?: {
-    matchedStyles: MatchedStyles;
+    styles: ElementCssStyles;
     options: CssFormatterOptions & PaginationOptions;
   };
   #listExtensions?: boolean;
@@ -156,6 +164,7 @@ export class McpResponse implements Response {
   #page?: McpPage;
   #error?: Error;
   #attachedWaitForResult?: WaitForEventsResult;
+  #consoleErrorsFrom?: {page: McpPage; lastMessageId: number};
   #reconnectNotice = false;
   #devToolsComments?: CD4ACommentThread[];
   #webAuthnFormatter?: WebAuthnFormatter;
@@ -225,6 +234,7 @@ export class McpResponse implements Response {
       resourceTypes?: ResourceType[];
       includePreservedRequests?: boolean;
       networkRequestIdInDevToolsUI?: number;
+      serviceWorkerId?: string;
     },
   ): void {
     if (!value) {
@@ -244,6 +254,7 @@ export class McpResponse implements Response {
       resourceTypes: options?.resourceTypes,
       includePreservedRequests: options?.includePreservedRequests,
       networkRequestIdInDevToolsUI: options?.networkRequestIdInDevToolsUI,
+      serviceWorkerId: options?.serviceWorkerId,
     };
   }
 
@@ -277,12 +288,19 @@ export class McpResponse implements Response {
     };
   }
 
+  includeConsoleErrorsFrom(page: McpPage): void {
+    this.#consoleErrorsFrom = {
+      page,
+      lastMessageId: page.getLatestConsoleMessageId(),
+    };
+  }
+
   setIncludeCssStyles(
-    matchedStyles: MatchedStyles,
+    styles: ElementCssStyles,
     options: CssFormatterOptions & PaginationOptions,
   ): void {
     this.#cssStylesData = {
-      matchedStyles,
+      styles,
       options,
     };
   }
@@ -293,14 +311,22 @@ export class McpResponse implements Response {
 
   attachNetworkRequest(
     reqId: number,
-    options?: {requestFilePath?: string; responseFilePath?: string},
+    options?: {
+      requestFilePath?: string;
+      responseFilePath?: string;
+      serviceWorkerId?: string;
+    },
   ): void {
     this.#attachedNetworkRequestId = reqId;
     this.#attachedNetworkRequestOptions = options;
   }
 
-  attachConsoleMessage(msgid: number): void {
+  attachConsoleMessage(
+    msgid: number,
+    options?: {serviceWorkerId?: string},
+  ): void {
     this.#attachedConsoleMessageId = msgid;
+    this.#attachedConsoleMessageServiceWorkerId = options?.serviceWorkerId;
   }
 
   attachWebAuthnAuthenticator(
@@ -568,12 +594,22 @@ export class McpResponse implements Response {
     if (!this.#attachedNetworkRequestId) {
       return undefined;
     }
-    if (!this.#page) {
-      throw new Error(`Response must have an McpPage`);
+    const serviceWorkerId =
+      this.#attachedNetworkRequestOptions?.serviceWorkerId;
+    let request: HTTPRequest;
+    if (serviceWorkerId) {
+      request = context.getServiceWorkerNetworkRequestById(
+        serviceWorkerId,
+        this.#attachedNetworkRequestId,
+      );
+    } else {
+      if (!this.#page) {
+        throw new Error(`Response must have an McpPage`);
+      }
+      request = this.#page.getNetworkRequestById(
+        this.#attachedNetworkRequestId,
+      );
     }
-    const request = this.#page.getNetworkRequestById(
-      this.#attachedNetworkRequestId,
-    );
     return await NetworkFormatter.from(request, {
       requestId: this.#attachedNetworkRequestId,
       requestIdResolver: req => this.getNetworkRequestStableId(req),
@@ -586,19 +622,27 @@ export class McpResponse implements Response {
     });
   }
 
-  async #handleAttachedConsoleMessage(): Promise<
-    ConsoleFormatter | IssueFormatter | undefined
-  > {
+  async #handleAttachedConsoleMessage(
+    context: McpContext,
+  ): Promise<ConsoleFormatter | IssueFormatter | undefined> {
     if (!this.#attachedConsoleMessageId) {
       return undefined;
+    }
+    const consoleMessageStableId = this.#attachedConsoleMessageId;
+    if (this.#attachedConsoleMessageServiceWorkerId) {
+      // Service workers have no DevTools universe; stacks use raw frames.
+      return await ConsoleFormatter.from(
+        context.getServiceWorkerConsoleMessageById(
+          this.#attachedConsoleMessageServiceWorkerId,
+          consoleMessageStableId,
+        ),
+        {id: consoleMessageStableId, fetchDetailedData: true},
+      );
     }
     if (!this.#page) {
       throw new Error(`Response must have an McpPage`);
     }
-    const message = this.#page.getConsoleMessageById(
-      this.#attachedConsoleMessageId,
-    );
-    const consoleMessageStableId = this.#attachedConsoleMessageId;
+    const message = this.#page.getConsoleMessageById(consoleMessageStableId);
     if ('args' in message || message instanceof UncaughtError) {
       const consoleMessage = message as ConsoleMessage | UncaughtError;
       return await ConsoleFormatter.from(consoleMessage, {
@@ -671,8 +715,42 @@ export class McpResponse implements Response {
       );
     }
 
-    if (this.#consoleDataOptions.types?.length) {
-      const normalizedTypes = new Set(this.#consoleDataOptions.types);
+    return await this.#formatConsoleData(
+      messages,
+      page,
+      this.#consoleDataOptions,
+    );
+  }
+
+  async #handleConsoleErrors(): Promise<
+    Array<ConsoleFormatter | IssueFormatter> | undefined
+  > {
+    const errorsFrom = this.#consoleErrorsFrom;
+    // A tool that lists or shows console messages itself already covers these.
+    if (
+      !errorsFrom ||
+      this.#consoleDataOptions?.include ||
+      this.#attachedConsoleMessageId !== undefined ||
+      errorsFrom.page.isClosed()
+    ) {
+      return undefined;
+    }
+    return await this.#formatConsoleData(
+      errorsFrom.page.getConsoleDataAfter(errorsFrom.lastMessageId),
+      errorsFrom.page,
+      {types: ['error']},
+    );
+  }
+
+  async #formatConsoleData(
+    messages: Array<
+      ConsoleMessage | Error | DevTools.AggregatedIssue | UncaughtError
+    >,
+    page: McpPage | undefined,
+    options: {types?: string[]; includeStackTraces?: boolean},
+  ): Promise<Array<ConsoleFormatter | IssueFormatter>> {
+    if (options.types?.length) {
+      const normalizedTypes = new Set(options.types);
       messages = messages.filter(message => {
         if ('type' in message) {
           return normalizedTypes.has(message.type());
@@ -694,7 +772,7 @@ export class McpResponse implements Response {
               return await ConsoleFormatter.from(consoleMessage, {
                 id: consoleMessageStableId,
                 fetchDetailedData: false,
-                fetchStackTrace: this.#consoleDataOptions?.includeStackTraces,
+                fetchStackTrace: options.includeStackTraces,
                 devTools: page ? page.devtoolsUniverse : undefined,
               });
             }
@@ -720,12 +798,19 @@ export class McpResponse implements Response {
     if (!this.#networkRequestsOptions?.include) {
       return undefined;
     }
-    if (!this.#page) {
-      throw new Error(`Response must have an McpPage`);
+    let requests: HTTPRequest[];
+    if (this.#networkRequestsOptions.serviceWorkerId) {
+      requests = context.getServiceWorkerNetworkData(
+        this.#networkRequestsOptions.serviceWorkerId,
+      );
+    } else {
+      if (!this.#page) {
+        throw new Error(`Response must have an McpPage`);
+      }
+      requests = this.#page.getNetworkRequests(
+        this.#networkRequestsOptions.includePreservedRequests,
+      );
     }
-    let requests = this.#page.getNetworkRequests(
-      this.#networkRequestsOptions?.includePreservedRequests,
-    );
 
     // Apply resource type filtering if specified
     if (this.#networkRequestsOptions.resourceTypes?.length) {
@@ -808,15 +893,17 @@ export class McpResponse implements Response {
       thirdPartyDeveloperTools,
       webmcpTools,
       consoleMessages,
+      consoleErrors,
       networkRequests,
       commentsResult,
     ] = await Promise.all([
       this.#handleSnapshot(context),
       this.#handleAttachedNetworkRequest(context),
-      this.#handleAttachedConsoleMessage(),
+      this.#handleAttachedConsoleMessage(context),
       this.#handleThirdPartyDeveloperTools(),
       this.#handleWebMCP(),
       this.#handleConsoleList(context),
+      this.#handleConsoleErrors(),
       this.#handleNetworkRequestList(context),
       this.#handleComments(),
     ]);
@@ -835,6 +922,7 @@ export class McpResponse implements Response {
       {
         detailedConsoleMessage,
         consoleMessages,
+        consoleErrors,
         snapshot,
         detailedNetworkRequest,
         networkRequests,
@@ -868,6 +956,7 @@ export class McpResponse implements Response {
     data: {
       detailedConsoleMessage: ConsoleFormatter | IssueFormatter | undefined;
       consoleMessages: Array<ConsoleFormatter | IssueFormatter> | undefined;
+      consoleErrors?: Array<ConsoleFormatter | IssueFormatter>;
       snapshot: SnapshotFormatter | string | undefined;
       detailedNetworkRequest?: NetworkFormatter;
       networkRequests?: NetworkFormatter[];
@@ -894,6 +983,7 @@ export class McpResponse implements Response {
       networkRequests?: object[];
       consoleMessage?: object;
       consoleMessages?: object[];
+      consoleErrors?: object[];
       traceSummary?: string;
       traceInsights?: Array<{
         insightName: string;
@@ -902,7 +992,13 @@ export class McpResponse implements Response {
       traceInsight?: string;
       error?: string;
       lighthouseResult?: object;
-      extensions?: object[];
+      extensions?: Array<{
+        id: string;
+        name: string;
+        version: string;
+        enabled: boolean;
+        path: string;
+      }>;
       thirdPartyDeveloperTools?: object[];
       webmcpTools?: object[];
       message?: string;
@@ -1614,13 +1710,19 @@ Call ${handleDialog(this.#config.resolved).name} to handle it before continuing.
     }
 
     if (data.extensions) {
-      const extensionArray = Array.from(data.extensions.values());
-      structuredContent.extensions = extensionArray;
+      const extensions = Array.from(data.extensions.values(), extension => ({
+        id: extension.id,
+        name: extension.name,
+        version: extension.version,
+        enabled: extension.enabled,
+        path: extension.path,
+      }));
+      structuredContent.extensions = extensions;
       response.push('## Extensions');
-      if (extensionArray.length === 0) {
-        response.push('No extensions installed.');
+      if (extensions.length === 0) {
+        response.push('No unpacked extensions found.');
       } else {
-        const extensionsMessage = extensionArray
+        const extensionsMessage = extensions
           .map(extension => {
             return `id=${extension.id} "${extension.name}" v${extension.version} ${extension.enabled ? 'Enabled' : 'Disabled'}`;
           })
@@ -1735,6 +1837,23 @@ Call ${handleDialog(this.#config.resolved).name} to handle it before continuing.
       }
     }
 
+    if (data.consoleErrors?.length) {
+      const grouped = ConsoleFormatter.groupConsecutive(data.consoleErrors);
+      const shown = grouped.slice(0, MAX_CONSOLE_ERRORS);
+      structuredContent.consoleErrors = shown.map(item => item.toJSON());
+      response.push('## Console errors during this call');
+      if (compactEncode) {
+        response.push(compactEncode(structuredContent.consoleErrors));
+      } else {
+        response.push(...shown.map(item => item.toString()));
+      }
+      if (grouped.length > shown.length) {
+        response.push(
+          `${grouped.length - shown.length} more not shown. Call ${LIST_CONSOLE_MESSAGES_TOOL_NAME} to list them.`,
+        );
+      }
+    }
+
     if (data.comments) {
       const commentsJson = data.comments.toJSON();
       structuredContent.comments = commentsJson;
@@ -1765,7 +1884,7 @@ Call ${handleDialog(this.#config.resolved).name} to handle it before continuing.
         this.#page?.textSnapshot?.resolveCdpElementId(backendNodeId);
 
       const containerDetails = await resolveContainerQueries(
-        this.#cssStylesData.matchedStyles,
+        this.#cssStylesData.styles.matchedStyles,
         resolveUid,
       );
 
@@ -1776,7 +1895,7 @@ Call ${handleDialog(this.#config.resolved).name} to handle it before continuing.
       };
 
       const allRules = CssFormatter.collectRules(
-        this.#cssStylesData.matchedStyles,
+        this.#cssStylesData.styles,
         options,
       );
 
@@ -1797,7 +1916,7 @@ Call ${handleDialog(this.#config.resolved).name} to handle it before continuing.
       }
 
       const formatter = new CssFormatter(
-        this.#cssStylesData.matchedStyles,
+        this.#cssStylesData.styles,
         options,
         rules,
       );

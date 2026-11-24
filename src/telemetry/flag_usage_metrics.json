@@ -500,5 +500,21 @@
   {
     "name": "category_webauthn",
     "flagType": "boolean"
+  },
+  {
+    "name": "category_network_mocks_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "category_network_mocks",
+    "flagType": "boolean"
+  },
+  {
+    "name": "background_new_pages_present",
+    "flagType": "boolean"
+  },
+  {
+    "name": "background_new_pages",
+    "flagType": "boolean"
   }
 ]

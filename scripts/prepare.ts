@@ -50,7 +50,12 @@ const SPARSE_CHECKOUT_PATTERNS = [
   '"/extension-api/"',
   '"/node_modules/"',
   '"/scripts/"',
+  '"/test/TestExpectations"',
+  '"/test/conductor/"',
+  '"/test/run.ts"',
+  '"/test/shared/"',
   '"/third_party/"',
+  '"/v8/"',
   '"/**/BUILD.gn"',
   '"/**/*.gni"',
 ].join(' ');
@@ -62,14 +67,21 @@ function ensureSubmodule(): void {
     'devtools-frontend',
   );
   const mcpEntry = resolve(devtoolsFrontendDir, 'mcp', 'mcp.ts');
-  const gnScriptsDir = resolve(devtoolsFrontendDir, 'scripts', 'build');
+  // The newest path that SPARSE_CHECKOUT_PATTERNS added: a checkout that
+  // has mcp.ts but not this file predates the current patterns.
+  const sparseMarker = resolve(
+    devtoolsFrontendDir,
+    'test',
+    'conductor',
+    'test_config.ts',
+  );
 
-  if (existsSync(mcpEntry) && existsSync(gnScriptsDir)) {
+  if (existsSync(mcpEntry) && existsSync(sparseMarker)) {
     console.log('devtools-frontend submodule is ready.');
     return;
   }
 
-  if (existsSync(mcpEntry) && !existsSync(gnScriptsDir)) {
+  if (existsSync(mcpEntry) && !existsSync(sparseMarker)) {
     console.log('Updating devtools-frontend sparse checkout patterns...');
     try {
       execSync(

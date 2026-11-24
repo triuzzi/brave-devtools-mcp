@@ -33,6 +33,7 @@ function verifyPackageContents() {
       'out/Default/gen/src/bin/brave-devtools-mcp.js',
       'out/Default/gen/src/bin/brave-devtools.js',
       'out/Default/gen/src/third_party/index.js',
+      'out/Default/gen/src/third_party/browser.js',
       'out/Default/gen/src/third_party/cli.js',
       'out/Default/gen/src/third_party/devtools-formatter-worker.js',
       'out/Default/gen/src/third_party/devtools-heap-snapshot-worker.js',
@@ -55,7 +56,9 @@ function verifyPackageContents() {
       '.tsbuildinfo',
       '-tsconfig.json',
       '-tsconfig.ref.json',
+      '.meta.json',
       '.stamp',
+      '.d',
     ];
     for (const file of files) {
       if (forbiddenSuffixes.some(suffix => file.endsWith(suffix))) {

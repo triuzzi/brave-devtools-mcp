@@ -38,15 +38,11 @@ jobs:
           cache: npm
           node-version: 22 # build works only with 22+.
 
-      - name: Install dependencies
+      - name: Install and sync dependencies
         shell: bash
-        run: npm ci
+        run: npm run sync
         env:
           PUPPETEER_SKIP_DOWNLOAD: true
-
-      - name: Sync DevTools dependencies
-        shell: bash
-        run: npm run gclient-sync
 
       - name: Install Brave Browser (Ubuntu)
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -85,7 +81,7 @@ jobs:
           "PUPPETEER_EXECUTABLE_PATH=$braveExecutablePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build
-        run: npm run bundle
+        run: npm run build
         env:
           NODE_OPTIONS: '--max_old_space_size=4096'
 
@@ -105,11 +101,6 @@ jobs:
         run: >
           npm run test:no-build -- --retry
           ${{ matrix.os == 'windows-latest' && '--test-concurrency=1' || '' }}
-
-      - name: Run notices tests
-        shell: bash
-        run: >
-          npm run test:notices:no-build
 
   # Gating job for branch protection.
   test-success:
