@@ -13,6 +13,7 @@ interface ToolOption extends YargsOptions {
 }
 
 export interface ToolArguments {
+  emulateFocusedPages: boolean;
   screenshotFormat: 'jpeg' | 'png' | 'webp';
   screenshotQuality?: number;
   screenshotMaxWidth?: number;
@@ -25,6 +26,13 @@ export type ToolOptions = McpOptionsFor<ToolArguments, ToolOption>;
  * Options that change the default behavior of tools.
  */
 export const toolOptions: ToolOptions = {
+  emulateFocusedPages: {
+    type: 'boolean',
+    default: true,
+    reloadable: true,
+    description:
+      'When true (default), each discovered page emulates OS focus so multi-agent workflows see focused document APIs. Set --no-emulate-focused-pages when attaching to a visible Brave window so passive MCP tools do not steal desktop focus from the user.',
+  },
   screenshotFormat: {
     type: 'string',
     default: 'png',

@@ -139,6 +139,11 @@ The Brave DevTools MCP server supports the following configuration option:
   Restricts browser's network access by allowing only specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Requires a recent Brave version. Silently detaches from targets with unallowed URLs upon connection, and blocks runtime requests (including navigations and subresources); targets already open when patterns are updated via --watchConfig remain attached. Accepts an array of patterns. A pattern that uses a regexp group, a named group (`:name`), or a partial IPv4 wildcard (for example, `(127\.\d+\.\d+\.\d+)`, `*://127.0.0.1::port/*`, or `*://127.0.0.*/*`) is rejected, because it is not enforced on redirects or subresources; use an exact value or a `*` wildcard instead. Patterns follow URL Pattern defaults: an omitted port matches only the scheme's default port (for example, `https://internal.corp/*` does not match `https://internal.corp:8443/`; use `https://internal.corp:*/*` to match any port), and the hostname must match exactly (a trailing-dot host such as `internal.corp.` is a different hostname).
   - **Type:** array
 
+- **`--emulateFocusedPages`/ `--emulate-focused-pages`**
+  When true (default), each discovered page emulates OS focus so multi-agent workflows see focused document APIs. Set --no-emulate-focused-pages when attaching to a visible Brave window so passive MCP tools do not steal desktop focus from the user.
+  - **Type:** boolean
+  - **Default:** `true`
+
 - **`--screenshotFormat`/ `--screenshot-format`**
   Override the default output format used by take_screenshot when the caller does not specify one. JPEG and WebP are ~3-5x smaller than PNG, which reduces transfer and storage size. To reduce context size use --screenshotMaxWidth / --screenshotMaxHeight, since image tokens scale with dimensions rather than encoded bytes. Unset preserves the existing default ("png").
   - **Type:** string

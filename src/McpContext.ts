@@ -596,6 +596,18 @@ export class McpContext implements Context, BrowserlessContext {
     background?: boolean,
     isolatedContextName?: string,
   ): Promise<McpPage> {
+    // Isolated browser contexts open a separate cookie jar and often raise a
+    // new window, which a shared desktop session must never do.
+    if (
+      isolatedContextName !== undefined &&
+      this.#config.resolved.emulateFocusedPages === false
+    ) {
+      throw new Error(
+        'isolatedContext is refused while --no-emulate-focused-pages is set. ' +
+          'Use a normal background tab on the existing Brave instance ' +
+          '(new_page with background=true, no isolatedContext).',
+      );
+    }
     let page: Page;
     if (isolatedContextName !== undefined) {
       let ctx = this.#isolatedContexts.get(isolatedContextName);
