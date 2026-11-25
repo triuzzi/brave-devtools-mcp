@@ -9,6 +9,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import {
+  consentGatedAttachHint,
+  httpBaseFromWsEndpoint,
+  probeLoopbackCdpHttp,
+  type CdpHttpReadiness,
+} from './cdpReadiness.js';
 import type {ParsedArguments} from './config/mcp-options.js';
 import type {ReadonlyServerConfig} from './config/ServerConfig.js';
 import type {
@@ -624,10 +630,13 @@ export class BrowserManager {
     };
 
     let autoConnect = false;
+    let readinessHttpBase: string | undefined;
     if (wsEndpoint) {
       connectOptions.browserWSEndpoint = wsEndpoint;
+      readinessHttpBase = httpBaseFromWsEndpoint(wsEndpoint);
     } else if (browserURL) {
       connectOptions.browserURL = browserURL;
+      readinessHttpBase = browserURL;
     } else if (channel || userDataDir) {
       // Puppeteer's `channel` connect option only knows Chrome's install
       // locations, so Brave's DevToolsActivePort file is read directly.
@@ -654,6 +663,7 @@ export class BrowserManager {
         }
         const browserWSEndpoint = `ws://127.0.0.1:${port}${rawPath}`;
         connectOptions.browserWSEndpoint = browserWSEndpoint;
+        readinessHttpBase = `http://127.0.0.1:${port}`;
       } catch (error) {
         const permissionError = devToolsActivePortPermissionError(
           error,
@@ -675,6 +685,10 @@ export class BrowserManager {
       );
     }
 
+    const readiness: CdpHttpReadiness = readinessHttpBase
+      ? await probeLoopbackCdpHttp(readinessHttpBase)
+      : 'unknown';
+
     logger?.(
       'Connecting Puppeteer to ',
       JSON.stringify(redactConnectOptionsForLogging(connectOptions)),
@@ -693,7 +707,11 @@ export class BrowserManager {
         throw permissionError;
       }
       throw new Error(
-        `Could not connect to Brave. ${autoConnect ? `Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.` : `Check if Brave is running.`}`,
+        `Could not connect to Brave. ${
+          autoConnect
+            ? `Check if Brave is running and remote debugging is enabled by going to brave://inspect/#remote-debugging.`
+            : `Check if Brave is running.`
+        }${readinessHttpBase ? consentGatedAttachHint(readiness, readinessHttpBase) : ''}`,
         {
           cause: err,
         },

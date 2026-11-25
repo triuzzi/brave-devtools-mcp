@@ -27,7 +27,7 @@ export const browserOptions: BrowserOptions = {
   autoConnect: {
     type: 'boolean',
     description:
-      'If specified, automatically connects to a Brave instance running locally from the user data directory identified by the channel parameter (default channel is release). Requires remote debugging to be enabled via brave://inspect/#remote-debugging.',
+      'If specified, automatically connects to a Brave instance running locally from the user data directory identified by the channel parameter (default channel is release). Requires remote debugging to be enabled via brave://inspect/#remote-debugging, or Brave started with --remote-debugging-port; to point at an explicit endpoint instead, use --browserUrl.',
     default: false,
   },
   browserUrl: {

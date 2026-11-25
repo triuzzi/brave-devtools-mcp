@@ -189,6 +189,7 @@ ts_library("mcp_lib") {
     "collectors/constants.ts",
     "config/ConfigLocator.ts",
     "config/ConfigParser.ts",
+    "cdpReadiness.ts",
     "config/ConfigWatcher.ts",
     "config/ServerConfig.ts",
     "config/browser-options.ts",
